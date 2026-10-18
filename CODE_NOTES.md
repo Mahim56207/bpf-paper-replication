@@ -91,3 +91,29 @@ Revision 1 read `skb->data` / `skb->data_end` and the verifier answered `invalid
 | `skb->len` | `struct __sk_buff.len`, build/vmlinux.h:61514 (first field) | length of the packet, checked before every load. Read access is allowed (UNVERIFIED until the load succeeds) |
 
 `data` and `data_end` are no longer used.
+
+## Phase 4: src/loader.c (loader + map reader)
+
+Grepped before first use. Format: symbol | file:line.
+
+### libbpf 1.6.2 (installed headers, ENV.md)
+| symbol | file:line | signature / documented behaviour |
+|---|---|---|
+| `bpf_object__open_file` | /usr/include/bpf/libbpf.h:228 | `struct bpf_object *bpf_object__open_file(const char *path, const struct bpf_object_open_opts *opts)`; "NULL is returned on error, error code is stored in errno" (doc :217-227) |
+| `bpf_object__load` | /usr/include/bpf/libbpf.h:264 | `int bpf_object__load(struct bpf_object *obj)`; "0, on success; negative error code, otherwise, error code is stored in errno" |
+| `bpf_object__find_program_by_name` | /usr/include/bpf/libbpf.h:323 | `struct bpf_program *...(const struct bpf_object *obj, const char *name)`; no doc comment, NULL for not found (UNVERIFIED: not stated in the header, checked at run time) |
+| `bpf_program__fd` | /usr/include/bpf/libbpf.h:410 | `int bpf_program__fd(const struct bpf_program *prog)`; no doc comment; treated as failing when < 0 |
+| `bpf_object__find_map_by_name` | /usr/include/bpf/libbpf.h:988 | **not in the Phase 4 prompt's list**; needed to get a `struct bpf_map *` from the object. "BPF map instance ...; or NULL otherwise" (doc :980-987). Recorded in DEVIATIONS.md D4.1 |
+| `bpf_map__fd` | /usr/include/bpf/libbpf.h:1050 | `int bpf_map__fd(const struct bpf_map *map)`; "the file descriptor; or -EINVAL in case of an error" |
+| `bpf_object__close` | /usr/include/bpf/libbpf.h:271 | `void bpf_object__close(struct bpf_object *obj)`; "closes a BPF object and releases all resources" |
+| `bpf_map_lookup_elem` | /usr/include/bpf/bpf.h:154 | `int bpf_map_lookup_elem(int fd, const void *key, void *value)`; no doc comment; any non-zero result treated as failure (UNVERIFIED convention) |
+
+### Socket options (attach path)
+| symbol | file:line | use |
+|---|---|---|
+| `SO_ATTACH_BPF` | /usr/include/asm-generic/socket.h:82 (= 50) | `setsockopt(sock, SOL_SOCKET, SO_ATTACH_BPF, &prog_fd, sizeof(prog_fd))` |
+| `SO_DETACH_BPF` | /usr/include/asm-generic/socket.h:83 (`= SO_DETACH_FILTER`, defined at :46 as 27) | detach on exit |
+| `SOL_SOCKET` | /usr/include/asm-generic/socket.h:9 | option level |
+| `PACKET_STATISTICS`, `struct tpacket_stats`, `SOL_PACKET` | see Phase 2 table (linux/if_packet.h:44, :77; bits/socket.h:151) | kernel counters printed at exit |
+No attach API is invented: attach is plain `setsockopt` on the AF_PACKET socket, as the prompt requires.
+- Timing for the 1 Hz loop: `clock_nanosleep` /usr/include/time.h:323; `TIMER_ABSTIME` /usr/include/aarch64-linux-gnu/bits/time.h:69 (also linux/time.h:82); `CLOCK_MONOTONIC` see Phase 2 table.

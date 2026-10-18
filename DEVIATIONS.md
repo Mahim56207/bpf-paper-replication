@@ -28,3 +28,15 @@ Format: what / why / taken or not.
   - "type socket" reclassified as tooling nomenclature, not a deviation (supersedes D3.1's framing).
   - 14-byte prepend accepted as BPF_PROG_TEST_RUN L3-view quirk; live AF_PACKET L2 view to be confirmed empirically in Phase 4.
   - arm64 JIT-disassembly absence recorded in ENV.md as platform limitation.
+
+## Phase 4
+
+- **D4.1 libbpf function outside the prompt's list**: `bpf_object__find_map_by_name` (libbpf.h:988), needed to obtain the map from the object. Grepped and recorded in CODE_NOTES.md before use.
+- **D4.2 Setup path.** The prompt said to use the setup path in scripts/phase2_verify.sh. Its Stage B commands are copied unchanged into scripts/lab_up.sh (reusable, with a `down` mode) and called from scripts/phase4_verify.sh.
+- **D4.3 Cross-check rule adapted.** "Same tolerance rule" as Phase 2, with the sniffer-drop term removed (the filter counts before the socket queue). Stated before the run in scripts/phase4_verify.sh and justified in docs/phase4_notes.md; the run confirmed the assumption (matched 10,800 = tcpdump 10,800 while the socket dropped 10,763).
+- **D4.4 Extras beyond the prompt**: a second, unfiltered tcpdump to cross-check the total, `FINAL_SOCKET` statistics from `PACKET_STATISTICS`, an iperf3 UDP noise stream on port 5051, and a UDP match phase.
+- **D4.5 Reviewer rulings on Phase 4** (received with "Phase 4 complete"). Note: the ruling's D4.1-D4.4 labels do not match this file's D4.1-D4.4 above; the mapping, by content, is: ruling D4.1 -> D4.3 (counter semantics/rule), ruling D4.2 -> D4.3 (rule pre-declared in-script), ruling D4.3 -> D4.1 (API addition), ruling D4.4 -> D4.4 (extras/limitation).
+  - D4.1 approved: filter runs pre-queueing (tap semantics); Phase 6 must separate slot0 filter drops from /proc/net/packet queue-overflow drops, and add a loader drain mode for the full-path config.
+  - D4.2 approved: rule pre-declared in-script before the run; Phase 6 inherits the same discipline.
+  - D4.3 reclassified: verified API addition (confirm CODE_NOTES.md hit), not a deviation. Confirmed: CODE_NOTES.md records `bpf_object__find_map_by_name` at /usr/include/bpf/libbpf.h:988 (Phase 4 table).
+  - D4.4 accepted as limitation; negative runs added to exercise the error paths (logs/p4_negatives.log).

@@ -1,0 +1,18 @@
+### 1. sudo ./build/loader nosuchif0   (running as root)
+if_nametoindex(nosuchif0): No such device
+exit=1
+
+### 2. ./build/loader p1veth0   (NO sudo: run as user mahim via runuser; uid=1000)
+libbpf: Failed to bump RLIMIT_MEMLOCK (err = -EPERM), you might need to do it explicitly!
+libbpf: Error in bpf_object__probe_loading(): -EPERM. Couldn't load trivial BPF program. Make sure your kernel supports BPF (CONFIG_BPF_SYSCALL=y) and/or that RLIMIT_MEMLOCK is set to big enough value.
+bpf_object__load: Operation not permitted
+exit=1
+
+### 3. extra: sudo ./build/loader p1veth0 /no/such/object.o   (object open failure, as root)
+libbpf: elf: failed to open /no/such/object.o: -ENOENT
+bpf_object__open_file(/no/such/object.o): No such file or directory
+exit=1
+
+### 4. extra: sudo ./build/loader   (usage)
+usage: ./build/loader <iface> [object]
+exit=2
