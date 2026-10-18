@@ -1,0 +1,927 @@
+                                   The BSD Packet Filter:
+                        A New Architecture for User-level Packet Capture
+                                                                                                            
+
+
+
+
+                                                  Steven McCanne and Van Jacobson
+                                                     Lawrence Berkeley Laboratory
+                                                         One Cyclotron Road
+                                                         Berkeley, CA 94720
+                                                  mccanne@ee.lbl.gov, van@ee.lbl.gov
+                                                               December 19, 1992
+
+
+Abstract                                                                              SunOS, the Ultrix Packet Filter[2] in DEC’s Ultrix and Snoop
+                                                                                      in SGI’s IRIX.
+Many versions of Unix provide facilities for user-level packet                           These kernel facilities derive from pioneering work done at
+capture, making possible the use of general purpose work-                             CMU and Stanford to adapt the Xerox Alto ‘packet filter’ to a
+stations for network monitoring. Because network monitors                             Unix kernel[8]. When completed in 1980, the CMU/Stanford
+run as user-level processes, packets must be copied across the                        Packet Filter, CSPF, provided a much needed and widely used
+kernel/user-space protection boundary. This copying can be                            facility. However on today’s machines its performance, and
+minimized by deploying a kernel agent called a packet filter,                         the performance of its descendents, leave much to be de-
+which discards unwanted packets as early as possible. The                             sired — a design that was entirely appropriate for a 64KB
+original Unix packet filter was designed around a stack-based                         PDP-11 is simply not a good match to a 16MB Sparcstation
+filter evaluator that performs sub-optimally on current RISC                          2. This paper describes the BSD Packet Filter, BPF, a new
+CPUs. The BSD Packet Filter (BPF) uses a new, register-                               kernel architecture for packet capture. BPF offers substan-
+based filter evaluator that is up to 20 times faster than the                         tial performance improvement over existing packet capture
+original design. BPF also uses a straightforward buffering                            facilities—10 to 150 times faster than Sun’s NIT and 1.5 to 20
+strategy that makes its overall performance up to 100 times                           times faster than CSPF on the same hardware and traffic mix.
+faster than Sun’s NIT running on the same hardware.                                   The performance increase is the result of two architectural
+                                                                                      improvements:
+
+1 Introduction                                                                           
+
+
+
+
+                                                                                             BPF uses a re-designed, register-based ‘filter machine’
+                                                                                             that can be implemented efficiently on today’s register
+Unix has become synonymous with high quality networking                                      based RISC CPU. CSPF used a memory-stack-based
+and today’s Unix users depend on having reliable, responsive                                 filter machine that worked well on the PDP-11 but is a
+network access. Unfortunately, this dependence means that                                    poor match to memory-bottlenecked modern CPUs.
+network trouble can make it impossible to get useful work
+done and increasingly users and system administrators find
+                                                                                         
+
+
+
+
+                                                                                             BPF uses a simple, non-shared buffer model made pos-
+that a large part of their time is spent isolating and fixing                                sible by today’s larger address spaces. The model is
+network problems. Problem solving requires appropriate di-                                   very efficient for the ‘usual cases’ of packet capture.1
+agnostic and analysis tools and, ideally, these tools should
+                                                                                         In this paper, we present the design of BPF, outline how it
+be available where the problems are—on Unix workstations.
+                                                                                      interfaces with the rest of the system, and describe the new
+To allow such tools to be constructed, a kernel must contain
+                                                                                      approach to the filtering mechanism. Finally, we present
+some facility that gives user-level programs access to raw,
+                                                                                      performance measurements of BPF, NIT, and CSPF which
+unprocessed network traffic.[7] Most of today’s workstation
+                                                                                      show why BPF performs better than the other approaches.
+operating systems contain such a facility, e.g., NIT[10] in
+                                                                                         1 As opposed to, for example, the AT&T STREAMS buffer model used
+   
+
+
+
+
+    This is a preprint of a paper to be presented at the 1993 Winter                  by NIT which has enough options to be Turing complete but appears to be a
+USENIX conference, January 25–29, 1993, San Diego, CA.
+       
+
+
+
+
+                                                                                      poor match to any practical problem.
+    This work was supported by the Director, Office of Energy Research,
+Scientific Computing Staff, of the U.S. Department of Energy under Contract
+No. DE-AC03-76SF00098.
+
+
+                                                                                  1
+2                                                                                                                  BPF – The BSD Packet Filter
+
+
+2 The Network Tap                                                                   filtering out unwanted packets in interrupt context. To min-
+                                                                                    imize memory traffic, the major bottleneck in most modern
+BPF has two main components: the network tap and the                                workstations, the packet should be filtered ‘in place’ (e.g.,
+packet filter. The network tap collects copies of packets from                      where the network interface DMA engine put it) rather than
+the network device drivers and delivers them to listening ap-                       copied to some other kernel buffer before filtering. Thus, if
+plications. The filter decides if a packet should be accepted                       the packet is not accepted, only those bytes that were needed
+and, if so, how much of it to copy to the listening application.                    by the filtering process are referenced by the host.
+    Figure 1 illustrates BPF’s interface with the rest of the sys-                      In contrast, SunOS’s STREAMS NIT [10] copies the pack-
+tem. When a packet arrives at a network interface the link                          ets before filtering and as a result suffers a performance degra-
+level device driver normally sends it up the system protocol                        dation. The STREAMS packet filter module (nit pf(4M)) sits
+stack. But when BPF is listening on this interface, the driver                      on top of the packet capture module (nit if(4M)). Each packet
+first calls BPF. BPF feeds the packet to each participating pro-                    received is copied to an mbuf, and passed off to NIT, which
+cess’ filter. This user-defined filter decides whether a packet                     then allocates a STREAMS message buffer and copies in
+is to be accepted and how many bytes of each packet should                          the packet. The message buffer is then sent upstream to the
+be saved. For each filter that accepts the packet, BPF copies                       packet filter, which may decide to discard the packet. Thus,
+the requested amount of data to the buffer associated with that                     a copy of each packet is always made, and many CPU cycles
+filter. The device driver then regains control. If the packet                       will be wasted copying unwanted packets.
+was not addressed to the local host, the driver returns from the
+interrupt. Otherwise, normal protocol processing proceeds.
+                                                                                    2.2    Tap Performance Measurements
+    network       network
+                                     rarpd                                          Before discussing the details of the packet filter, we present
+    monitor       monitor
+                                                                          user
+                                                                                    some measurements which compare the the relative costs of
+                                                                          kernel
+                                                                                    the BPF and SunOS STREAMS buffering models. This per-
+                                                                                    formance is independent of the packet filtering machinery.
+     buffer        buffer           buffer                                             We configured both BPF and NIT into the same SunOS
+                                                               protocol
+                                                                stack
+                                                                                    4.1.1 kernel, and took our measurements on a Sparcstation 2.
+                                                                                    The measurements reflect the overhead incurred during the
+                                   
+
+
+
+
+         filter        filter            filter
+
+                                                                                    interrupt processing — i.e., how long it takes each system to
+         BPF                                                                        stash the packet into a buffer. For BPF we simply measured
+                                                                                    the before and after times of the tap call, bpf tap(), using the
+                                                                                    Sparcstation’s microsecond clock. For NIT we measured the
+                                                                                    time of the tap call snit intr() plus the additional overhead of
+                       link−level          link−level   link−level                  copying promiscuous packets to mbufs. (Promiscuous pack-
+                         driver              driver       driver
+                                                                                    ets are those packets which were not addressed to the local
+                                                                          kernel    host, and are present only because the packet filter is run-
+                                                                          network
+                                                                                    ning.) In other words, we included the performance hit that
+                                                                                    NIT takes for not filtering packets in place. To obtain accurate
+                                Figure 1: BPF Overview                              timings, interrupts were locked out during the instrumented
+                                                                                    code segments.
+   Since a process might want to look at every packet on a                             The data sets were taken as a histogram of processing time
+network and the time between packets can be only a few                              versus packet length. We plotted the mean processing per
+microseconds, it is not possible to do a read system call per                       packet versus packet size, for two configurations: an “accept
+packet and BPF must collect the data from several packets                           all” filter, and a “reject all” filter.
+and return it as a unit when the monitoring application does                           In the first case, the STREAMS NIT buffering module
+a read. To maintain packet boundaries, BPF encapsulates the                         (nit buf(4M)) was pushed on the NIT stream with its chunk-
+captured data from each packet with a header that includes a                        size parameter set to the 16K bytes. Similarly, BPF was
+time stamp, length, and offsets for data alignment.                                 configured to use 16K buffers. The packet filtering module
+                                                                                    which usually sits between the NIT interface and NIT buffer-
+                                                                                    ing modules was omitted to effect “accept all” semantics. In
+2.1 Packet Filtering                                                                both cases, no truncation limits were specified. This data is
+Because network monitors often want only a small subset of                          shown in Figure 2. Both BPF and NIT show a linear growth
+network traffic, a dramatic performance gain is realized by                         with captured packet size reflecting the cost of packet-to-filter
+                                                                                    buffer copies. However the different slopes of the BPF and
+Winter USENIX – Jan., 1993 – San Diego, CA                                                                                                                                                         3
+
+
+                                                            700
+
+                                                                                           NIT
+                                                            600                            BPF
+
+
+
+
+                          Mean Per Packet Overhead (usec)
+                                                            500
+
+
+
+                                                            400
+
+
+
+                                                            300
+
+
+
+                                                            200
+                                                                          
+
+
+
+
+                                                                              89.2
+                                                            100
+                                                                              5.7                                              NIT Incremental Overhead: 216 ns/byte
+                                                                                                                               BPF Incremental Overhead: 148 ns/byte
+                                                             0
+                                                                                                                                                                    
+
+
+
+
+                                                                      0              200         400   600          800            1000            1200           1400     1600
+
+                                                                                                             Packet Size (bytes)
+                                                                                                                         
+
+
+
+
+                                                                                            Figure 2: NIT versus BPF: “accept all”
+
+
+NIT lines show that BPF does its copies at memory speed                                                                  copies packets then runs the filter over the copies.4 Thus the
+(148ns/byte) while NIT runs 45% slower (216ns/byte).2 The                                                                cost of running NIT increases with packet size even when
+y-intercept gives the fixed per-packet processing overhead:                                                              the packet is discarded by the filter. For large packets, this
+The overhead of a BPF call is about 6 s while NIT is 15                                                                  gratuitous copy makes NIT almost two orders of magnitude
+times worse at 89 s per packet. Much of this huge disparity                                                              more expensive than BPF (450 s vs. 5 s).
+appears to be due to the cost of allocating and initializing a                                                              The major lesson here is that filtering packets early and
+buffer under the remarkably baroque AT&T STREAM I/O                                                                      in place pays off. While a STREAMS-like design might ap-
+system.3                                                                                                                 pear to be modular and elegant, the performance implications
+   Figure 3 shows the results for the “reject all” configuration.                                                        of module partitioning need to be considered in the design.
+Here the STREAMS packet filter module was configured with                                                                We claim that even a STREAMS-based network tap should
+a “reject all” filter and pushed directly on top of the NIT inter-                                                       include the packet filtering and buffering functionality in its
+face module (the NIT buffering module was not used). Since                                                               lowest layer. There is very little design advantage in factor-
+the filter discards all packets, the processing time should be                                                           ing the packet filter into a separate streams module, but great
+constant, independent of the packet size. For BPF this is true                                                           performance advantage in integrating the packet filter and the
+— we see essentially the same fixed cost as last time (5 s                                                               tap into a single unit.
+instead of 6 since rejecting avoids a call to the BPF copy
+routine) and no effect due to packet size. However, as ex-
+plained earlier, NIT doesn’t filter packets in place but instead                                                         3 The Filter Model
+    2 This difference is due to the fact that NIT is not as careful about align-
+                                                                                                                         Assuming one uses reasonable care in the design of the buffer-
+ment as BPF. The network driver wants the IP header aligned on a longword
+boundary, but an Ethernet header is 14 bytes so the start of the packet is short-                                        ing model,5 it will be the dominant cost of packets you accept
+word aligned. Since NIT copies the packet to a longword aligned boundary,                                                while the packet filter computation will be the dominant cost
+an inefficient, misaligned bcopy results. This oversight will be felt twice                                              of packets you reject. Most applications of a packet capture
+— once in this measurement, and again at the user-level, when for instance,
+                                                                                                                         facility reject far more packets than they accept and, thus,
+a network monitor like tcpdump or etherfind must copy the network-layer
+portion of the packet to a longword aligned boundary.                                                                    good performance of the packet filter is critical to good over-
+    3 You might note anomalous behavior near the origin for the NIT data                                                 all performance.
+in both this and the following graph. STREAMS must allocate an mblk (a
+                                                                                                                            4 The copy is required because the filter is a separate STREAM module
+STREAMS buffer descriptor) for every packet. For small packets, the packet
+data is copied into a region of the mblk while large packets must use a more                                             pushed on top of the capture module and, thus, the capture module must
+elaborate allocator involving additional dblk (‘data block’) allocations.                                                copy data to STREAM buffers to send it up the stream to the filter module.
+                                                                                                                         As was the case with capture/buffer separation, the documentation notes this
+                                                                                                                         capture/filter separation is a feature, not a bug.
+                                                                                                                            5 E.g., not STREAMS.
+4                                                                                                                                                                        BPF – The BSD Packet Filter
+
+                                                       500
+
+
+                                                                                     NIT
+                                                                                     BPF
+                                                       400
+
+
+                     Mean Per Packet Overhead (usec)
+
+                                                       300
+
+
+
+
+                                                       200
+                                                                         136
+
+                                                                                                                             NIT Incremental Overhead: 210 ns/byte
+                                                                                                                             BPF Incremental Overhead: 0 ns/byte
+
+                                                       100
+
+
+                                                                     
+
+
+
+
+                                                                         4.6
+
+                                                        0
+                                                                                                                                                                         
+
+
+
+
+                                                                 0             200         400   600          800                1000            1200              1400        1600
+
+                                                                                                       Packet Size (bytes)
+                                                                                                                   
+
+
+
+
+                                                                                      Figure 3: NIT versus BPF: “reject all”
+
+
+   A packet filter is simply a boolean valued function on a                                                        two elements. A filter program is a sequentially executed list
+packet. If the value of the function is true the kernel copies the                                                 of instructions. After evaluating a program, if the top of stack
+packet for the application; if it is false the packet is ignored.                                                  has a non-zero value or the stack is empty then the packet is
+   Historically there have been two approaches to the fil-                                                         accepted, otherwise it is rejected.
+ter abstraction: a boolean expression tree (used by CSPF)                                                             There are two implementation shortcomings of the expres-
+and a directed acyclic control flow graph or CFG (first used                                                       sion tree approach:6
+by NNStat[1] and used by BPF). For example, Figure 4 il-
+lustrates the two models with a filter that recognizes either
+                                                                                                                       
+
+
+
+
+                                                                                                                             The operand stack must be simulated. On most modern
+IP or ARP packets on an Ethernet. In the tree model each                                                                     machines this means generating add and subtract opera-
+node represents a boolean operation while the leaves repre-                                                                  tions to maintain a simulated stack pointer and actually
+sent test predicates on packet fields. The edges represent                                                                   doing loads and stores to memory to simulate the stack.
+operator-operand relationships. In the CFG model each node                                                                   Since memory tends to be the major bottleneck in mod-
+represents a packet field predicate while the edges represent                                                                ern architectures, a filter model that can use values in
+control transfers. The righthand branch is traversed if the                                                                  machine registers and avoid this memory traffic will be
+predicate is true, the lefthand branch if false. There are two                                                               more efficient.
+terminating leaves which represent true and false for the en-                                                          
+
+
+
+
+                                                                                                                             The tree model often does unnecessary or redundant
+tire filter.
+                                                                                                                             computations. For example, the tree in fig. 4 will com-
+   These two models of filtering are computationally equiv-
+                                                                                                                             pute the value of ‘ether.type == ARP’ even if the test
+alent. I.e., any filter that can be expressed in one can be
+                                                                                                                             for IP is true. While this problem can be somewhat
+expressed in the other. However, in implementation they are
+                                                                                                                             mitigated by adding ‘short circuit’ operators to the filter
+very different: The tree model maps naturally into code for a
+                                                                                                                             machine, some inefficiency is intrinsic: Because of the
+stack machine while the CFG model maps naturally into code
+                                                                                                                           6 Note that it is not our intention to denigrate CSPF or its enormous
+for a register machine. Since most modern machines are reg-
+ister based, we will argue that the CFG approach lends itself                                                      contribution to the community — we simply wish to investigate the imple-
+                                                                                                                   mentation implications of its filter model when run on modern hardware. The
+to a more efficient implementation.                                                                                CSPF filtering mechanism was intended to support efficient protocol demul-
+                                                                                                                   tiplexing for user-level network code. The initial implementation achieved
+                                                                                                                   huge gains by performing user-specified demultiplexing inside the kernel
+3.1 The CSPF (Tree) Model                                                                                          rather than in a user-process. After this, the incremental gain from a more
+                                                                                                                   efficient filter design was negligible and, as a result, the designers of CSPF
+The CSPF filter engine is based on an operand stack. In-                                                           invested less effort in the filter machinery and, indeed, have pointed out that
+structions either push constants or packet data on the stack,                                                      the “filter language is not a result of careful analysis but rather embodies
+or perform a binary boolean or bitwise operation on the top                                                        several accidents of history”[8].
+Winter USENIX – Jan., 1993 – San Diego, CA                                                                                                  5
+
+
+                          Tree Representation                                 nice abstraction for describing and implementing the filtering
+                                                                              mechanism. And, since CSPF treats a packet as a simple array
+                                    OR                                        of bytes, the filtering model is completely protocol indepen-
+                                                                              dent. (The application that specifies the filter is responsible
+                                                                              for encoding the filter appropriately for the underlying net-
+                                                                              work media and protocols.)
+                                                                                  The BPF model, described in the next section, is an attempt
+                 ether.type=IP              ether.type=ARP                    to maintain the strengths of CSPF while addressing its limi-
+                                                                              tations and the performance shortcomings of the stack-based
+                                                                              filter machine.
+
+                          CFG Representation                                  3.2     The BPF Model
+                                                                              3.2.1    CFGs vs. Trees
+                                         ether.type=IP
+                                                                              BPF uses the CFG filter model since it has a significant per-
+                                  no
+                                                                              formance advantage over the expression tree model. While
+                                                    yes                       the tree model may need to redundantly parse a packet many
+                         ether.type=ARP                                       times, the CFG model allows parse information to be ‘built
+                                            yes                               into’ the flow graph. I.e., packet parse state is ‘remembered’
+                    no                                                        in the graph since you know what paths you must have tra-
+                                                                              versed to reach to a particular node and once a subexpression
+                 FALSE                            TRUE
+                                                                              is evaluated it need not be recomputed since the control flow
+                                                                              graph can always be (re-)organized so the value is only used
+                                                                              at nodes that follow the original computation.
+         Figure 4: Filter Function Representations.
+                                                                                                         ether.type=IP
+
+      hierarchical design of network protocols, packet headers
+      must be parsed to reach successive layers of encapsu-                                                               ip.src=foo
+                                                                                        ether.type=ARP
+      lation. Since each leaf of the expression tree represents
+      a packet field, independent of other leaves, redundant
+      parses may be carried out to evaluate the entire tree. In                                                      ip.dst=foo
+                                                                                 ether.type=RARP
+      the CFG representation, it is always possible to reorder
+      the graph in such a way that at most one parse is done
+                                                                                                      arp.src=foo
+      for any layer.7
+
+   Another problem with CSPF, recognized by the designers,
+                                                                                          arp.dst=foo
+is its inability to parse variable length packet headers, e.g.,
+TCP headers encapsulated in a variable length IP header. Be-
+cause the CSPF instruction set didn’t include an indirection
+                                                                                                   FALSE                 TRUE
+operator, only packet data at fixed offsets is accessible. Also,
+the CSPF model is restricted to a single sixteen bit data type
+which results in a doubling of the number of operations to
+manipulate 32 bit data such as Internet addresses or TCP se-                          Figure 5: CFG Filter Function for “host foo”.
+quence numbers. Finally, the design does not permit access
+                                                                                 For example, Figure 5 shows a CFG filter function that ac-
+to the last byte of an odd-length packet.
+                                                                              cepts all packets with an Internet address foo. We consider a
+   While the CSPF model has shortcomings, it offers a novel                   scenario where the network layer protocols are IP, ARP, and
+generalization of packet filtering: The idea of putting a                     Reverse ARP, all of which contain source and destination
+pseudo-machine language interpreter in the kernel provides a                  Internet addresses. The filter should catch all cases. Accord-
+   7 This graph reordering is, however, a non-trivial problem.   Our BPF      ingly, the link layer type field is tested first. In the case of
+compiler (part of tcpdump[4]) contains a fairly sophisticated optimizer to    IP packets, the IP host address fields are queried, while in
+reorder and minimize CFG filters. This optimizer is the subject of a future   the case of ARP packets, the ARP address fields are used.
+paper.
+                                                                              Note that once we learn that the packet is IP, we do not need
+6                                                                                                                                   BPF – The BSD Packet Filter
+
+
+                                                                                    OR
+
+
+
+
+                                                       AND                                                           AND
+
+
+
+
+                                    OR                                     OR                                                       OR
+
+
+
+
+                   ether.type=ARP        ether.type=RARP     arp.src=foo        arp.dst=foo      ether.type=IP         ip.src=foo        ip.dst=foo
+
+
+
+
+                                                    Figure 6: Tree Filter Function for “host foo”.
+
+
+to check that it might be ARP or RARP. In the expression                                 match packets addressed to a set of machines, or a set of TCP
+tree model, shown in figure 6, seven comparison predicates                               ports. Ideally, we would like to cache the packet field in a
+and six boolean operations are required to traverse the entire                           register and compare it across the set of values. If the field is
+tree. The longest path through the CFG has five comparison                               encapsulated in a variable length header, we must parse the
+operations, and the average number of comparisons is three.                              outer headers to reach the data. Furthermore, on alignment
+                                                                                         restricted machines, accessing multi-byte data can involve an
+3.2.2 Design of filter pseudo-machine                                                    expensive byte-by-byte load. Also, for packets in mbufs, a
+                                                                                         field access may involve traversing an mbuf chain. After we
+The use of a control flow graph rather than an expression tree                           have done this work once, we should not do it again.
+as the theoretical underpinnings of the filter pseudo-machine                               Constraint 4 means that we will have an efficient instruc-
+is a necessary step towards an efficient implementation but it                           tion decoding step but it precludes an orthogonal addressing
+is not sufficient. Even after leveraging off the experience and                          mode design unless we are willing to accommodate a combi-
+pseudo-machine models of CSPF and NNStat[1], the BPF                                     natorial explosion of switch cases. For example, while three
+model underwent several generations (and several years) of                               address instructions make sense for a real processor (where
+design and test. We believe the current model offers sufficient                          much work is done in parallel) the sequential execution model
+generality with no sacrifice in performance. Its evolution was                           of an interpreter means that each address descriptor would
+guided by the following design constraints:                                              have to be decoded serially. A single address instruction
+                                                                                         format minimizes the decode, while maintaining sufficient
+    1. It must be protocol independent. The kernel should not                            generality.
+       have to be modified to add new protocol support.                                     Finally, Constraint 5 is a straightforward performance con-
+                                                                                         sideration. Along with constraint 4, it enforces the notion that
+    2. It must be general. The instruction set should be rich
+                                                                                         the pseudo-machine register set should be small.
+       enough to handle unforeseen uses.
+                                                                                            These constraints prompted the adoption of an accumu-
+    3. Packet data references should be minimized.                                       lator machine model. Under this model, each node in the
+                                                                                         flowgraph computes its corresponding predicate by comput-
+    4. Decoding an instruction should consist of a single C                              ing a value into the accumulator and branching based on that
+       switch statement.                                                                 value. Figure 7 shows the filter function of Figure 5 using
+    5. The abstract machine registers should reside in physical                          the BPF instruction set.
+       registers.
+                                                                                         3.3      The BPF Pseudo-Machine
+   Like CSPF, constraint 1 is adhered to simply by not men-
+tioning any protocols in the model. Packets are viewed                                   The BPF machine abstraction consists of an accumulator, an
+simply as byte arrays.                                                                   index register (x), a scratch memory store, and an implicit
+   Constraint 2 means that we must provide a fairly general                              program counter. The operations on these elements can be
+computational model, with control flow, sufficient ALU op-                               categorized into the following groups:
+erations, and conventional addressing modes.
+                                                                                              1. LOAD INSTRUCTIONS copy a value into the accumulator
+                                                                                                                         
+
+
+
+
+   Constraint 3 requires that we only ever touch a given packet
+word once. It is common for a filter to compare a given packet                                   or index register. The source can be an immediate value,
+field against a set of values, then compare another field against                                packet data at a fixed offset, packet data at a variable
+another set of values, and so on. For example, a filter might                                    offset, the packet length, or the scratch memory store.
+Winter USENIX – Jan., 1993 – San Diego, CA                                                                                                                                             7
+
+
+                                                                                          ldh [12]
+                                                                                          jeq #0x800                          opcodes                   addr modes
+                                                                                                                              ldb           [k]                   [x+k]
+                                jeq #0x805                                                                    ld [26]         ldh           [k]                   [x+k]
+                                                                                                              jeq #foo        ld         #k #len        M[k]     [k]   [x+k]
+                                                                                                                              ldx        #k #len        M[k]     4*([k]&0xf)
+         jeq #0x8035
+                                                                                                       ld [30]                st                         M[k]
+                                                                                                       jeq #foo               stx                        M[k]
+                                                                     ld [28]                                                  jmp                          L
+                                                                     jeq #foo
+                                                                                                                              jeq                     #k, Lt, Lf
+                                ld [38]
+                                                                                                                              jgt                     #k, Lt, Lf
+                                jeq #foo                                                                                      jge                     #k, Lt, Lf
+                                                                                                                              jset                    #k, Lt, Lf
+                                                                                                                              add               #k                     x
+                                                                     FALSE                             TRUE                   sub               #k                     x
+                                                                                                                              mul               #k                     x
+                                                                                                                              div               #k                     x
+                       Figure 7: BPF Program for “host foo”.                                                                  and               #k                     x
+                                                                                                                              or                #k                     x
+     
+                                                                                                                              lsh               #k                     x
+  2. STORE INSTRUCTIONS copy either the accumulator or
+                                                                            
+
+
+
+
+                                                                                                                              rsh               #k                     x
+     index register into the scratch memory store.                                                                            ret               #k                     a
+                                                                                                                              tax
+  3. ALU INSTRUCTIONS perform arithmetic or logic on the
+           
+
+
+
+
+                                                                    
+
+
+
+
+                                                                                                                              txa
+     accumulator using the index register or a constant as an
+     operand.
+                                                                                                                                        Table 1: BPF Instruction Set
+  4. BRANCH INSTRUCTIONS alter the flow of control, based
+                                                                                   
+
+
+
+
+     on comparison test between a constant or x register and
+     the accumulator.                                                                                                       The load instructions simply copy the indicated value into
+                                                                                                                         the accumulator (ld, ldh, ldb) or index register (ldx).
+  5. RETURN INSTRUCTIONS terminate the filter and indicated                                                              The index register cannot use the packet addressing modes.
+                                                                              
+
+
+
+
+     what portion of the packet to save. The packet is dis-                                                              Instead, a packet value must be loaded into the accumulator
+     carded entirely if the filter returns 0.                                                                            and transferred to the index register, via tax. This is not a
+                                                                                                                         common occurrence, as the index register is used primarily
+  6. MISCELLANEOUS INSTRUCTIONS comprise everything
+                                                                                            
+
+
+
+
+                                                                                                                         to parse the variable length IP header, which can be loaded
+     else — currently, register transfer instructions.
+                                                                                                                         directly via the 4*([k]&0xf) addressing mode. All values
+                                                                                                                         are 32 bit words, except packet data can be loaded into the
+  The fixed-length instruction format is defined by as fol-
+                                                                                                                         accumulator as unsigned bytes (ldb) or unsigned halfwords
+lows:
+                                                                                                                         (ldh). Similarly, the scratch memory store is addressed as
+                                                         opcode:16 jt:8                             jf:8                 an array of 32 bit words. The instruction fields are all in host
+                                                                                                                         byte order, and the load instructions convert packet data from
+                                                                 k:32
+                                                                                                                         network order to host order. Any reference to data beyond
+                                                                                                                         the end of the packet terminates the filter with a return value
+   The opcode field indicates the instruction type and address-
+                                                                                                                         of zero (i.e., the packet is discarded).
+ing modes. The jt and jf fields are used by the conditional
+jump instructions and are the offsets from the next instruction                                                             The ALU operations (add, sub, etc.) perform the indi-
+to the true and false targets. The k field is a generic field used                                                       cated operation using the accumulator and operand, and store
+for various purposes.                                                                                                    the result back into the accumulator. Division by zero termi-
+                                                                                                                         nates the filter.
+   Table 1 shows the entire BPF instruction set. We have
+adopted this “assembler syntax” as a means of illustrating                                                                  The jump instructions compare the value in the accumula-
+BPF filters and for debugging output. The actual encodings                                                               tor with a constant (jset performs a “bitwise and” — useful
+are defined with C macros, the details of which we omit here                                                             for conditional bit tests). If the result is true (or non-zero),
+(see [6] for full details). The column labelled addr modes lists                                                         the true branch is taken, otherwise the false branch is taken.
+the addressing modes allowed for each instruction listed in                                                              Arbitrary comparisons, which are less common, can be done
+the opcode column. The semantics of the addressing modes                                                                 by subtracting and comparing to 0. Note that there are no
+are listed in Table 2.                                                                                                   jlt, jle or jne opcodes since these can be built from the
+8                                                                                                   BPF – The BSD Packet Filter
+
+
+                                                                                        ldh   [12]
+    #k                the literal value stored in k                                     jeq   #ETHERTYPE IP, L1, L4
+    #len              the length of the packet                                    L1:   ld    [26]
+                                                                                        and   #0xffffff00
+    M[k]              the word at offset k in the scratch mem-                          jeq   #0x80037000, L4, L2
+                      ory store                                                   L2:   jeq   #0x8003fe00, L4, L3
+    [k]               the byte, halfword, or word at byte offset                  L3:   ret   #TRUE
+                      k in the packet                                             L4:   ret   #0
+    [x+k]             the byte, halfword, or word at offset x+k
+                      in the packet
+                                                                   3.5    Parsing Packet Headers
+    L                 an offset from the current instruction to
+                      L                                            The previous examples assume that the data of interest lie at
+    #k, Lt, Lf        the offset to Lt if the predicate is true,
+                                                                   fixed offsets in the packet. This is not the case, for example,
+                      otherwise the offset to Lf
+                                                                   with TCP packets, which are encapsulated in a variable length
+    x                 the index register
+                                                                   IP header. The start of TCP header must be computed from
+    4*([k]&0xf)       four times the value of the low four bits
+                      of the byte at offset k in the packet        the length given in the IP header.
+                                                                      The IP header length is given by the low four bits of the
+                                                                   first byte in the IP section (byte 14 on an Ethernet). This
+             Table 2: BPF Addressing Modes                         value is a word offset, and must be scaled by four to get the
+                                                                   corresponding byte offset. The instructions below will load
+                                                                   this offset into the accumulator:
+codes above by reversing the branches. Since jump offsets
+are encoded in eight bits, the longest jump is 256 instructions.                              ldb    [14]
+Jumps longer than this are conceivable, so a jump always op-                                  and    #0xf
+code is provided (jmp) that uses the 32 bit operand field for                                 lsh    #2
+the offset.
+                                                                      Once the IP header length is computed, data in the TCP
+   The return instructions terminate the program and indicate
+                                                                   section can be accessed using indirect loads. Note that the
+how many bytes of the packet to accept. If that amount is
+                                                                   effective offset has three components:
+0, the packet will be rejected entirely. The actual amount
+accepted will be the minimum of the length of the packet and         
+
+
+
+
+                                                                         the IP header length,
+the amount indicated by the filter.
+                                                                     
+
+
+
+
+                                                                         the link level header length, and
+3.4 Examples                                                         
+
+
+
+
+                                                                         the data offset relative to the TCP header.
+
+We now present some examples to illustrate how packet filters         For example, an Ethernet header is 14 bytes and the desti-
+can be expressed using the BPF instruction set. (In all the        nation port in a TCP packet is at byte two. Thus, adding 16
+examples that follow, we assume Ethernet format for the link       to the IP header length gives the offset to the TCP destination
+level headers.)                                                    port. The previous code segment is shown below, augmented
+   This filter accepts all IP packets:                             to test the TCP destination port against some value N:
+
+                    ldh   [12]                                                                ldb   [14]
+                    jeq   #ETHERTYPE IP, L1, L2                                               and   #0xf
+              L1:   ret   #TRUE                                                               lsh   #2
+              L2:   ret   #0                                                                  tax
+                                                                                              ldh   [x+16]
+                                                                                              jeq   #N, L1, L2
+   The first instruction loads the Ethernet type field. We com-
+                                                                                        L1:   ret   #TRUE
+pare this to type IP. If the comparison fails, zero is returned                         L2:   ret   #0
+and the packet is rejected. If it is successful, TRUE is re-
+turned and the packet is accepted. (TRUE is some non-zero             Because the IP header length calculation is a common oper-
+value that represents the number of bytes to save.)                ation, the 4*([k]&0xf) addressing mode was introduced.
+   This next filter accepts all IP packets which did not origi-    Substituting in the ldx instruction simplifies the filter into:
+nate from two particular IP networks, 128.3.112 or 128.3.254.
+If the Ethernet type is IP, the IP source address is loaded and                               ldx   4*([14]&0xf)
+                                                                                              ldh   [x+16]
+the high 24 bits are masked off. This value is compared with                                  jeq   #N, L1, L2
+the two network addresses:                                                              L1:   ret   #TRUE
+                                                                                        L2:   ret   #0
+Winter USENIX – Jan., 1993 – San Diego, CA                                                                                           9
+
+
+   However, the above filter is valid only if the data we are      performs three primary tasks: filter translation, packet ac-
+looking at is really a TCP/IP header. Hence, the filter must       quisition, and packet display. Of interest here is the filter
+also check that link layer type is IP, and that the IP protocol    translation mechanism. A filter is specified with a user-
+type is TCP. Also, the IP layer might fragment a TCP packet,       friendly, high level description language. Tcpdump has a
+in which case the TCP header is present only in the first frag-    built in compiler (and optimizer) which translates the high
+ment. Hence, any packets with a non-zero fragment offset           level filters into BPF programs. Of course, this translation
+should be rejected. The final filter is shown below:               process is transparent to the user.
+                                                                      Arpwatch [5] is a passive monitoring program that tracks
+                   ldh    [12]
+                   jeq    #ETHERPROTO IP, L1, L5
+                                                                   Ethernet to IP address mappings. It notifies the system ad-
+             L1:   ldb    [23]                                     ministrator, via email, when new mappings are established
+                   jeq    #IPPROTO TCP, L2, L5                     or abnormal behavior is noted. A common administrative
+             L2:   ldh    [20]                                     nuisance is the use of a single IP address by more than one
+                   jset   #0x1fff, L5, L3
+             L3:   ldx    4*([14]&0xf)
+                                                                   physical host, which arpwatch dutifully detects and reports.
+                   ldh    [x+16]                                      A very different application of BPF has been its incor-
+                   jeq    #N, L4, L5                               poration into a variant of the Icon Programming Language
+             L4:   ret    #TRUE
+                                                                   [3]. Two new data types, a packet and a packet generator
+             L5:   ret    #0
+                                                                   have been built into the Icon interpreter. Packets appear as
+                                                                   first class record objects, allowing convenient “dot operator”
+3.6 Filter Performance Measurements                                access to packet headers. A packet generator can be instanti-
+                                                                   ated directly off the network, or from a previously collected
+   We profiled the BPF and CSPF filtering models outside the
+                                                                   file of trace data. Icon is an interpreted, dynamically typed
+kernel using iprof [9], an instruction count profiler. To fully
+                                                                   language with high level string scanning primitives and rich
+compare the two models, an indirection operator was added
+                                                                   data structures. With the BPF extensions, it is well suited for
+to CSPF so it could parse IP headers. The change was minor
+                                                                   the rapid prototyping of networking analysis tools.
+and did not adversely affect the original filtering performance.
+                                                                      Netload and histo are two network visualization tools
+Tests were run on large packet trace files gathered from a busy
+                                                                   which produce real time network statistics on an X dis-
+UC Berkeley campus network. Figure 8 shows the results for
+four fairly typical filters.                                       play. Netload graphs utilization data in real time, using
+                                                                   tcpdump style filter specifications. Histo produces a dynamic
+   Filter 1 is trivial. It tests whether one 16 bit word in the
+                                                                   interarrival-time histogram of timestamped multimedia net-
+packet is a given value. The two models are fairly compara-
+                                                                   work packets.
+ble, with BPF faster by about 50%.
+                                                                      The Reverse ARP daemon uses the BPF interface to read
+   Filter 2 looks for a particular IP host (source or destina-     and write Reverse ARP requests and replies directly to the
+tion) and shows more of a disparity—a performance gap of           local network. (We developed this program to allow us to
+240%. The larger difference here is due mostly to the fact that    entirely replace NIT by BPF in our SunOS 4 systems. Each of
+CSPF operates only on 16 bit words and needs two compar-           the Sun NIT-based applications (etherfind, traffic, and rarpd)
+ison operations to determine the equality of a 32 bit Internet     now has a BPF analog.)
+address.
+                                                                      Finally, recent versions of NNStat[1] and nfswatch can be
+   Filter 3 is an example of packet parsing (required to locate    configured to run over BPF (in addition to running over NIT).
+the TCP destination port field) and illustrates a yet greater
+performance gap. The BPF filter parses the packet once,
+loading the port field into the accumulator then simply does a     5 Conclusion
+comparison cascade of the interesting ports. The CSPF filter
+must re-do the parse and relocate the TCP header for each          BPF has proven to be an efficient, extensible, and portable
+port to be tested.                                                 interface for network monitoring. Our comparison studies
+   Finally, filter 5 demonstrates the effect of the unnecessary    have shown that it outperforms NIT in its buffer manage-
+computations done by CSPF for a filter similar to the one          ment and CSPF in its filtering mechanism. Its programmable
+described in figures 6 and 5.                                      pseudo-machine model has demonstrated excellent general-
+                                                                   ity and extensibility (all knowledge of particular protocols is
+                                                                   factored out of the kernel). Finally, the system is portable
+4 Applications                                                     and runs on most BSD and BSD-derivative systems8 and can
+                                                                   interact with various data link layers9 .
+BPF is now about two years old and has been put to work in            8 SunOS 3.5, HP-300 and HP-700 BSD, SunOS 4.x, 4.3BSD Tahoe/Reno,
+several applications. The most widely used is tcpdump [4],         and 4.4BSD.
+a network monitoring and data acquisition tool. Tcpdump               9 Ethernet, FDDI, SLIP, and PPP are currently supported.
+10                                                                                           BPF – The BSD Packet Filter
+
+
+
+
+                                   Mean Number of CPU Instructions Per Packet
+                                                                  
+
+
+
+
+     2500
+                                                                                                    2330
+
+
+
+
+                             BPF
+                             CSPF
+     2000
+
+
+
+
+     1500
+
+
+
+                                                                                 971 
+
+
+
+
+     1000
+
+
+                                                          549 
+
+
+
+
+      500
+                                                                      222
+                                              160
+                                                                      
+
+
+
+
+                                       96
+                                               
+
+
+
+
+                                                                                         129
+                                                                                         
+
+
+
+
+                       62
+                        
+
+
+
+
+       0
+                            Filter 1
+                                                  Filter 2
+                                                                         Filter 3
+                                                                                            Filter 4
+                                                                                                
+
+
+
+
+            Filter 1   IP packets
+            Filter 2   IP packets with src or dst “horse”
+            Filter 3   TCP packets with src or dst port of finger, domain, login, or shell
+            Filter 4   IP, ARP or RARP packets between hosts “horse” and “gauguin”
+
+
+                                   Figure 8: BPF/CSPF Filter Performance
+Winter USENIX – Jan., 1993 – San Diego, CA                                                                                             11
+
+
+6 Availability                                                          [8] MOGUL, J. C., RASHID, R. F., AND ACCETTA, M. J. The packet
+                                                                                     
+                                                                                                         
+
+
+
+
+                                                                            filter: An efficient mechanism for user-level network code. In
+BPF     is     available    via  anonymous      ftp   from                  Proceedings of 11th Symposium on Operating Systems Prin-
+host ftp.ee.lbl.gov as part of the tcpdump distribution,                    ciples (Austin, TX, Nov. 1987), ACM, pp. 39–51.
+currently in the file tcpdump-2.2.1.tar.Z. Eventually                   [9] RICE, S. P. iprof source code, May 1991. Brown University.
+we plan to factor BPF out into its own distribution so look            [10] SUN MICROSYSTEMS INC. NIT(4P); SunOS 4.1.1 Reference
+                                                                                                 
+
+
+
+
+for bpf-*.tar.Z in the future. Arpwatch and netload are                     Manual. Mountain View, CA, Oct. 1990. Part Number: 800-
+also available from this site.                                              5480-10.
+
+
+7 Acknowledgements
+This paper would never have been published without the en-
+couragement of Jeffrey Mogul. Jeff ported tcpdump to Ultrix
+and added little-endian support, uncovering dozens of our
+byte-ordering bugs. He also inspired the jset instruction
+by forcing us to consider the arduous task of parsing DEC-
+NET packet headers. Mike Karels suggested that the filter
+should decide not only whether to accept a packet, but also
+how much of it to keep. Craig Leres was the first major user of
+BPF/tcpdump and is responsible for finding and fixing many
+bugs in both. Chris Torek helped with the packet processing
+performance measurements and provided insight on various
+BSD peculiarities. Finally, we are grateful to the many users
+and extenders of BPF/tcpdump across the Internet for their
+suggestions, bug fixes, source code, and the many questions
+that have, over the years, greatly broadened our view of the
+networking world and BPF’s place in it.
+   Finally, we would like to thank Vern Paxson, Craig Leres,
+Jeff Mogul, Sugih Jamin, and the referees for their helpful
+comments on drafts of this paper.
+
+
+References
+ [1] BRADEN, R. T. A pseudo-machine for packet monitoring and
+                           
+
+
+
+
+     statistics. In Proceedings of SIGCOMM ’88 (Stanford, CA,
+     Aug. 1988), ACM.
+ [2] DIGITAL EQUIPMENT CORPORATION. packetfilter(4), Ultrix
+       
+                                                         
+
+
+
+
+     V4.1 Manual.
+ [3] GRISWOLD, R. E., AND GRISWOLD, M. T. The Icon Program-
+                                                 
+
+
+
+
+     ming Language. Prentice Hall, Inc., Englewood Cliffs, NJ,
+     1983.
+ [4] JACOBSON, V., LERES, C., AND MCCANNE, S. The Tcpdump
+                                                                
+
+
+
+
+     Manual Page. Lawrence Berkeley Laboratory, Berkeley, CA,
+     June 1989.
+ [5] LERES, C. The Arpwatch Manual Page. Lawrence Berkeley
+     Laboratory, Berkeley, CA, Sept. 1992.
+ [6] MCCANNE, S. The BPF Manual Page. Lawrence Berkeley
+                              
+
+
+
+
+     Laboratory, Berkeley, CA, May 1991.
+ [7] MOGUL, J. C. Efficient use of workstations for passive mon-
+           
+                   
+
+
+
+
+     itoring of local area networks. In Proceedings of SIGCOMM
+     ’90 (Philadelphia, PA, Sept. 1990), ACM.
+

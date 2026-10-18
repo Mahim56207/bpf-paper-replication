@@ -1,0 +1,39 @@
+28:based filter evaluator that is up to 20 times faster than the                         tial performance improvement over existing packet capture
+29:original design. BPF also uses a straightforward buffering                            facilities—10 to 150 times faster than Sun’s NIT and 1.5 to 20
+30:strategy that makes its overall performance up to 100 times                           times faster than CSPF on the same hardware and traffic mix.
+167:                          Mean Per Packet Overhead (usec)
+211:times worse at 89 s per packet. Much of this huge disparity                                                              more expensive than BPF (450 s vs. 5 s).
+254:                     Mean Per Packet Overhead (usec)
+295:packet. If the value of the function is true the kernel copies the                                                 of instructions. After evaluating a program, if the top of stack
+300:by NNStat[1] and used by BPF). For example, Figure 4 il-
+373:         Figure 4: Filter Function Representations.
+397:manipulate 32 bit data such as Internet addresses or TCP se-                          Figure 5: CFG Filter Function for “host foo”.
+399:                                                                                 For example, Figure 5 shows a CFG filter function that ac-
+433:                                                    Figure 6: Tree Filter Function for “host foo”.
+437:tree model, shown in figure 6, seven comparison predicates                               ports. Ideally, we would like to cache the packet field in a
+449:model underwent several generations (and several years) of                               address instructions make sense for a real processor (where
+464:       switch statement.                                                                 value. Figure 7 shows the filter function of Figure 5 using
+474:                                                                                              1. LOAD INSTRUCTIONS copy a value into the accumulator
+507:                       Figure 7: BPF Program for “host foo”.                                                                  and               #k                     x
+511:  2. STORE INSTRUCTIONS copy either the accumulator or
+520:  3. ALU INSTRUCTIONS perform arithmetic or logic on the
+534:                                                                                                                                        Table 1: BPF Instruction Set
+535:  4. BRANCH INSTRUCTIONS alter the flow of control, based
+542:     the accumulator.                                                                                                       The load instructions simply copy the indicated value into
+544:  5. RETURN INSTRUCTIONS terminate the filter and indicated                                                              The index register cannot use the packet addressing modes.
+553:  6. MISCELLANEOUS INSTRUCTIONS comprise everything
+560:     else — currently, register transfer instructions.
+568:                                                                                                                         byte order, and the load instructions convert packet data from
+575:jump instructions and are the offsets from the next instruction                                                             The ALU operations (add, sub, etc.) perform the indi-
+579:   Table 1 shows the entire BPF instruction set. We have
+580:adopted this “assembler syntax” as a means of illustrating                                                                  The jump instructions compare the value in the accumula-
+586:are listed in Table 2.                                                                                                   jlt, jle or jne opcodes since these can be built from the
+613:             Table 2: BPF Addressing Modes                         value is a word offset, and must be scaled by four to get the
+614:                                                                   corresponding byte offset. The instructions below will load
+617:are encoded in eight bits, the longest jump is 256 instructions.                              ldb    [14]
+622:   The return instructions terminate the program and indicate
+713:UC Berkeley campus network. Figure 8 shows the results for
+734:must re-do the parse and relocate the TCP header for each          BPF has proven to be an efficient, extensible, and portable
+740:                                                                   factored out of the kernel). Finally, the system is portable
+751:                                   Mean Number of CPU Instructions Per Packet
+829:                                   Figure 8: BPF/CSPF Filter Performance
