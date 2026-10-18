@@ -117,3 +117,15 @@ Grepped before first use. Format: symbol | file:line.
 | `PACKET_STATISTICS`, `struct tpacket_stats`, `SOL_PACKET` | see Phase 2 table (linux/if_packet.h:44, :77; bits/socket.h:151) | kernel counters printed at exit |
 No attach API is invented: attach is plain `setsockopt` on the AF_PACKET socket, as the prompt requires.
 - Timing for the 1 Hz loop: `clock_nanosleep` /usr/include/time.h:323; `TIMER_ABSTIME` /usr/include/aarch64-linux-gnu/bits/time.h:69 (also linux/time.h:82); `CLOCK_MONOTONIC` see Phase 2 table.
+
+## Phase 6a: loader drain mode (src/loader.c) and control programs (src/phase6_filters.c)
+New symbols beyond the Phase 4 tables. Grepped before use. Format: symbol | file:line.
+| symbol | file:line | use |
+|---|---|---|
+| `poll` | /usr/include/aarch64-linux-gnu/sys/poll.h:54 | wait for the AF_PACKET socket to become readable, with a timeout up to the next 1 s tick |
+| `struct pollfd` (`fd`, `events`, `revents`) | /usr/include/aarch64-linux-gnu/sys/poll.h:36 | argument to poll |
+| `POLLIN` | /usr/include/aarch64-linux-gnu/bits/poll.h:25 | readable event |
+| `MSG_DONTWAIT` | /usr/include/aarch64-linux-gnu/bits/socket.h:225 | non-blocking `recvfrom` in the drain loop |
+| `EAGAIN` / `EWOULDBLOCK` | /usr/include/asm-generic/errno-base.h:15 / errno.h:22 | not tested explicitly: any `recvfrom` failure just ends a drain batch |
+| `MSG_TRUNC`, `recvfrom` | see Phase 2 table | real packet length in `rx_bytes`; full-size copy (128 KiB buffer) |
+No new libbpf function is used. `src/phase6_filters.c` uses only symbols already recorded for Phase 3 (`SEC`, `__uint`, `__type`, `__always_inline`, `bpf_map_lookup_elem`, `struct __sk_buff`, `BPF_MAP_TYPE_ARRAY`).

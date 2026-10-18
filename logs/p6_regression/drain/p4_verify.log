@@ -1,0 +1,296 @@
+== phase4_verify 2026-10-18T17:31:06Z arch=aarch64 kernel=6.17.0-19-generic loader-flags='-d'
+
+== 1. lab network (scripts/lab_up.sh, same commands as Stage B of phase2_verify.sh)
+### root namespace: ip addr show p1veth0
+24: p1veth0@if23: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 1e:03:ef:ff:36:fa brd ff:ff:ff:ff:ff:ff link-netns p2ns
+    inet 10.0.0.1/24 scope global p1veth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1c03:efff:feff:36fa/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### namespace p2ns: ip addr show p1veth1
+23: p1veth1@if24: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 92:cb:c2:49:2b:3b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.0.2/24 scope global p1veth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::90cb:c2ff:fe49:2b3b/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### ip route get 10.0.0.2
+10.0.0.2 dev p1veth0 src 10.0.0.1 uid 0 
+    cache 
+### ip addr show (root namespace, as required)
+24: p1veth0@if23: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 1e:03:ef:ff:36:fa brd ff:ff:ff:ff:ff:ff link-netns p2ns
+    inet 10.0.0.1/24 scope global p1veth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1c03:efff:feff:36fa/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+
+== 2. start tcpdump (port 4040), tcpdump (no filter), loader
+START iface=p1veth0 ifindex=24 object=build/phase3_kern.o prog=phase3_filter prog_fd=5 map_fd=4 drain=1
+
+== 3. traffic: match = TCP 100 Mbit/s 5 s then UDP 50 Mbit/s 2 s on 4040; noise = TCP 20 Mbit/s (5050) and UDP 10 Mbit/s (5051) for 8 s
+
+== snapshots during traffic (loader attached)
+### bpftool prog show
+47: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:19:26+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+48: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:19:26+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+83: cgroup_device  name s_snapd_desktop  tag 03b4eaae2f14641a  gpl
+	loaded_at 2026-10-18T20:19:39+0530  uid 1000
+	xlated 296B  jited 288B  memlock 4096B  map_ids 9
+94: cgroup_device  name s_firefox_firef  tag 03b4eaae2f14641a  gpl
+	loaded_at 2026-10-18T20:42:04+0530  uid 1000
+	xlated 296B  jited 288B  memlock 4096B  map_ids 10
+98: cgroup_device  name sd_devices  tag b38fe34b3076e2e2  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 560B  jited 488B  memlock 4096B
+99: cgroup_device  name sd_devices  tag ee562f6fd944e5e7  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 504B  jited 448B  memlock 4096B
+100: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+101: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+102: cgroup_device  name sd_devices  tag 595bec8b59cee731  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 792B  jited 664B  memlock 4096B
+103: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+104: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+105: cgroup_device  name sd_devices  tag faced69a26b88244  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 1616B  jited 1280B  memlock 4096B
+106: cgroup_device  name sd_devices  tag 33357d76488799d3  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 184B  jited 176B  memlock 4096B
+107: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+108: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+109: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+110: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+111: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+112: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+113: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+114: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+115: cgroup_device  name sd_devices  tag ee0e253c78993a24  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 416B  jited 384B  memlock 4096B
+116: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+117: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+118: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+1289: socket_filter  name phase3_filter  tag 2d534a7c582f82ac  gpl
+	loaded_at 2026-10-18T22:15:32+0530  uid 0
+	xlated 920B  jited 680B  memlock 4096B  map_ids 117
+	btf_id 140
+1772: socket_filter  name phase3_filter  tag 2d534a7c582f82ac  gpl
+	loaded_at 2026-10-18T23:01:07+0530  uid 0
+	xlated 920B  jited 680B  memlock 4096B  map_ids 170
+	btf_id 353
+### bpftool map show
+8: hash  name s_prompting_cli  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+9: hash  name s_snapd_desktop  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+10: hash  name s_firefox_firef  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+117: array  name p3_counters  flags 0x0
+	key 4B  value 8B  max_entries 2  memlock 280B
+	btf_id 140
+170: array  name p3_counters  flags 0x0
+	key 4B  value 8B  max_entries 2  memlock 280B
+	btf_id 353
+iperf3 tcp 4040 exit=0
+[  5]   0.00-5.00   sec  59.8 MBytes   100 Mbits/sec    0            sender
+[  5]   0.00-5.00   sec  59.8 MBytes   100 Mbits/sec                  receiver
+
+iperf Done.
+iperf3 udp 4040 exit=0
+[  5]   0.00-2.00   sec  11.9 MBytes  50.0 Mbits/sec  0.000 ms  0/8638 (0%)  sender
+[  5]   0.00-2.00   sec  11.9 MBytes  50.0 Mbits/sec  0.055 ms  0/8638 (0%)  receiver
+
+iperf Done.
+noise tcp exit=0
+noise udp exit=0
+
+== loader output (logs/p6_regression/drain/p4_run.log)
+START iface=p1veth0 ifindex=24 object=build/phase3_kern.o prog=phase3_filter prog_fd=5 map_fd=4 drain=1
+t=1.000s total=1277 matched=410 dropped=867 | pps total=1277 matched=410 dropped=867 | rx_packets=410 rx_bytes=10774471 rx_pps=410
+t=2.001s total=2720 matched=879 dropped=1841 | pps total=1442 matched=469 dropped=973 | rx_packets=877 rx_bytes=23192725 rx_pps=467
+t=3.000s total=4062 matched=1278 dropped=2784 | pps total=1343 matched=399 dropped=944 | rx_packets=1276 rx_bytes=35670899 rx_pps=399
+t=4.001s total=5414 matched=1688 dropped=3726 | pps total=1351 matched=410 dropped=941 | rx_packets=1686 rx_bytes=48280871 rx_pps=410
+t=5.000s total=6784 matched=2113 dropped=4671 | pps total=1371 matched=425 dropped=946 | rx_packets=2111 rx_bytes=60760761 rx_pps=425
+t=6.000s total=11379 matched=5756 dropped=5623 | pps total=4596 matched=3644 dropped=952 | rx_packets=5754 rx_bytes=68006218 rx_pps=3644
+t=7.000s total=16636 matched=10072 dropped=6564 | pps total=5257 matched=4316 dropped=941 | rx_packets=10070 rx_bytes=74437058 rx_pps=4316
+t=8.001s total=18373 matched=10869 dropped=7504 | pps total=1735 matched=796 dropped=939 | rx_packets=10867 rx_bytes=75606710 rx_pps=796
+t=9.001s total=18545 matched=10869 dropped=7676 | pps total=172 matched=0 dropped=172 | rx_packets=10867 rx_bytes=75606710 rx_pps=0
+t=10.002s total=18545 matched=10869 dropped=7676 | pps total=0 matched=0 dropped=0 | rx_packets=10867 rx_bytes=75606710 rx_pps=0
+t=11.002s total=18545 matched=10869 dropped=7676 | pps total=0 matched=0 dropped=0 | rx_packets=10867 rx_bytes=75606710 rx_pps=0
+FINAL t=11.166s total=18545 matched=10869 dropped=7676 delivered_packets=10867 delivered_bytes=75606710
+FINAL_SOCKET kernel_packets=10869 kernel_drops=2
+
+== tcpdump port 4040 (logs/p6_regression/drain/p4_tcpdump_4040.log)
+Started p4-td4040.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null "port 4040".
+tcpdump: listening on p1veth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+10859 packets captured
+10869 packets received by filter
+10 packets dropped by kernel
+Stopping p4-td4040.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null "port 4040"...
+p4-td4040.service: Deactivated successfully.
+Stopped p4-td4040.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null "port 4040".
+
+== tcpdump no filter (logs/p6_regression/drain/p4_tcpdump_all.log)
+Started p4-tdall.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null.
+tcpdump: listening on p1veth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+18518 packets captured
+18545 packets received by filter
+27 packets dropped by kernel
+Stopping p4-tdall.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null...
+p4-tdall.service: Deactivated successfully.
+Stopped p4-tdall.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -w /dev/null.
+
+== snapshots after the loader exited (its program and map should be gone)
+### bpftool prog show
+47: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:19:26+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+48: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:19:26+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+83: cgroup_device  name s_snapd_desktop  tag 03b4eaae2f14641a  gpl
+	loaded_at 2026-10-18T20:19:39+0530  uid 1000
+	xlated 296B  jited 288B  memlock 4096B  map_ids 9
+94: cgroup_device  name s_firefox_firef  tag 03b4eaae2f14641a  gpl
+	loaded_at 2026-10-18T20:42:04+0530  uid 1000
+	xlated 296B  jited 288B  memlock 4096B  map_ids 10
+98: cgroup_device  name sd_devices  tag b38fe34b3076e2e2  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 560B  jited 488B  memlock 4096B
+99: cgroup_device  name sd_devices  tag ee562f6fd944e5e7  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 504B  jited 448B  memlock 4096B
+100: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+101: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+102: cgroup_device  name sd_devices  tag 595bec8b59cee731  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 792B  jited 664B  memlock 4096B
+103: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+104: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+105: cgroup_device  name sd_devices  tag faced69a26b88244  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 1616B  jited 1280B  memlock 4096B
+106: cgroup_device  name sd_devices  tag 33357d76488799d3  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 184B  jited 176B  memlock 4096B
+107: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+108: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+109: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+110: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+111: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+112: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+113: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+114: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+115: cgroup_device  name sd_devices  tag ee0e253c78993a24  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 416B  jited 384B  memlock 4096B
+116: cgroup_device  name sd_devices  tag 34ebccec77763928  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 464B  jited 416B  memlock 4096B
+117: cgroup_skb  name sd_fw_egress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+118: cgroup_skb  name sd_fw_ingress  tag 6deef7357e7b4530  gpl
+	loaded_at 2026-10-18T20:51:29+0530  uid 0
+	xlated 64B  jited 104B  memlock 4096B
+1289: socket_filter  name phase3_filter  tag 2d534a7c582f82ac  gpl
+	loaded_at 2026-10-18T22:15:32+0530  uid 0
+	xlated 920B  jited 680B  memlock 4096B  map_ids 117
+	btf_id 140
+### bpftool map show
+8: hash  name s_prompting_cli  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+9: hash  name s_snapd_desktop  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+10: hash  name s_firefox_firef  flags 0x0
+	key 9B  value 1B  max_entries 1000  memlock 89776B
+117: array  name p3_counters  flags 0x0
+	key 4B  value 8B  max_entries 2  memlock 280B
+	btf_id 140
+
+== 5. verifier silence: bpftool prog load build/phase3_kern.o /sys/fs/bpf/repl_p4 type socket 2>logs/p6_regression/drain/p4_verifier.log
+bpftool exit=0
+0 logs/p6_regression/drain/p4_verifier.log
+temp pin removed: yes
+
+== 6. cross-check
+loader : total=18545 matched=10869 dropped=7676  socket kernel_packets=10869 kernel_drops=2
+tcpdump(4040): captured=10859 received_by_filter=10869 dropped=10
+tcpdump(all) : received_by_filter=18545
+matched: abs_diff=10 allowance=64 (base=54 + tcpdump_drops=10); loader matched - tcpdump received_by_filter = 0
+CROSSCHECK matched: PASS
+total: abs_diff=0 allowance=92 (loader slot0+slot1 vs tcpdump(all) received_by_filter)
+CROSSCHECK total: PASS
+CHECK dropped slot moved: PASS (slot0=7676)
+L2 VIEW: CONFIRMED (slot1=10869 > 0 on real traffic; the filter parses ethhdr at offset 0)
+drain: delivered_packets=10867 matched=10869 abs_diff=2 allowance=54; socket kernel_drops=2 allowance=54
+CHECK drain: PASS
+
+== cleanup
+### leftover processes (expect none):
+24482 grep -E CROSSCHECK|CHECK|L2 VIEW|^loader|^tcpdump|abs_diff|drain|WARN|FATAL|bytes
+### topology left up (sudo bash scripts/lab_up.sh down removes it):
+p1veth0@if23     UP             10.0.0.1/24 fe80::1c03:efff:feff:36fa/64 
+p1veth1@if24     UP             10.0.0.2/24 fe80::90cb:c2ff:fe49:2b3b/64 

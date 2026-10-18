@@ -1,15 +1,20 @@
 /*
- * loader.c - Phase 4: load the Phase 3 socket filter, attach it to an AF_PACKET socket, and
- * print its two counters once per second.
+ * loader.c - load a socket filter, attach it to an AF_PACKET socket, and print its two counters
+ * once per second.
  *
- * Usage: loader <iface> [object]      (needs root: CAP_BPF/CAP_NET_RAW; object defaults to
- *                                      build/phase3_kern.o)
+ * Usage: loader [-d] [-p prog] <iface> [object]
+ *   -d        drain mode: read and discard every packet the filter accepts, so the socket queue
+ *             never overflows (Phase 6 "full path" configurations). Default: aggregate only,
+ *             nothing reads the socket (Phase 4 behaviour).
+ *   -p prog   program name inside the object (default phase3_filter)
+ *   object    default build/phase3_kern.o
+ * Needs root: CAP_BPF/CAP_NET_RAW.
+ *
  * Counter semantics (map p3_counters): slot 0 = dropped, slot 1 = matched, total = slot0 + slot1.
  * The two slots are read one after the other, so a line is not an atomic snapshot of both.
  * Stops on SIGINT/SIGTERM: prints a FINAL line, detaches the filter, closes the socket and object.
  *
- * Symbols used are recorded in CODE_NOTES.md with header file:line. The socket is only
- * attached to; packets the filter accepts queue on it unread (nothing reads them here).
+ * Symbols used are recorded in CODE_NOTES.md with header file:line.
  */
 #include <arpa/inet.h>
 #include <bpf/bpf.h>
@@ -19,6 +24,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <net/if.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,13 +34,19 @@
 #include <unistd.h>
 
 #define DEFAULT_OBJ "build/phase3_kern.o"
-#define PROG_NAME "phase3_filter"
+#define DEFAULT_PROG "phase3_filter"
 #define MAP_NAME "p3_counters"
 #define SLOT_DROPPED 0u
 #define SLOT_MATCHED 1u
 #define NS_PER_SEC UINT64_C(1000000000)
+/* Larger than any IPv4 packet plus the Ethernet header, so a drained packet is copied whole
+ * (same copy size as the baseline sniffer). */
+#define RX_BUF (128 * 1024)
+/* Packets read per drain call, so the once-per-second bookkeeping is never starved. */
+#define DRAIN_BATCH 256
 
 static volatile sig_atomic_t g_stop;
+static uint8_t g_rxbuf[RX_BUF];
 
 static void on_signal(int sig)
 {
@@ -60,9 +72,28 @@ static int read_counters(int map_fd, uint64_t *dropped, uint64_t *matched)
 	return 0;
 }
 
+/* Read and discard up to DRAIN_BATCH queued packets; returns the number read. MSG_TRUNC makes
+ * recvfrom return the real packet length. */
+static int drain_socket(int sock, uint64_t *pkts, uint64_t *bytes)
+{
+	int i;
+
+	for (i = 0; i < DRAIN_BATCH; i++) {
+		ssize_t n = recvfrom(sock, g_rxbuf, sizeof(g_rxbuf), MSG_DONTWAIT | MSG_TRUNC, NULL,
+				     NULL);
+
+		if (n < 0)
+			break; /* EAGAIN (queue empty), EINTR, or an error the poll loop will meet again */
+		(*pkts)++;
+		*bytes += (uint64_t)n;
+	}
+	return i;
+}
+
 int main(int argc, char **argv)
 {
-	const char *obj_path = argc > 2 ? argv[2] : DEFAULT_OBJ;
+	const char *prog_name = DEFAULT_PROG, *iface = NULL, *obj_path = DEFAULT_OBJ;
+	int drain = 0, positional = 0, a;
 	struct bpf_object *obj = NULL;
 	struct bpf_program *prog;
 	struct bpf_map *map;
@@ -71,17 +102,37 @@ int main(int argc, char **argv)
 	struct tpacket_stats st;
 	socklen_t stlen = sizeof(st);
 	uint64_t dropped = 0, matched = 0, prev_dropped = 0, prev_matched = 0;
+	uint64_t rx_pkts = 0, rx_bytes = 0, prev_rx_pkts = 0, prev_rx_bytes = 0;
 	uint64_t start, prev_t, next_tick;
 	unsigned int ifindex;
 	int prog_fd, map_fd, sock = -1, err, rc = 1;
 
-	if (argc < 2 || argc > 3) {
-		fprintf(stderr, "usage: %s <iface> [object]\n", argv[0]);
+	for (a = 1; a < argc; a++) {
+		if (!strcmp(argv[a], "-d")) {
+			drain = 1;
+		} else if (!strcmp(argv[a], "-p") && a + 1 < argc) {
+			prog_name = argv[++a];
+		} else if (argv[a][0] == '-') {
+			positional = -1;
+			break;
+		} else if (positional == 0) {
+			iface = argv[a];
+			positional = 1;
+		} else if (positional == 1) {
+			obj_path = argv[a];
+			positional = 2;
+		} else {
+			positional = -1;
+			break;
+		}
+	}
+	if (positional < 1) {
+		fprintf(stderr, "usage: %s [-d] [-p prog] <iface> [object]\n", argv[0]);
 		return 2;
 	}
-	ifindex = if_nametoindex(argv[1]);
+	ifindex = if_nametoindex(iface);
 	if (ifindex == 0) {
-		fprintf(stderr, "if_nametoindex(%s): %s\n", argv[1], strerror(errno));
+		fprintf(stderr, "if_nametoindex(%s): %s\n", iface, strerror(errno));
 		return 1;
 	}
 
@@ -95,10 +146,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "bpf_object__load: %s\n", strerror(-err));
 		goto out;
 	}
-	prog = bpf_object__find_program_by_name(obj, PROG_NAME);
+	prog = bpf_object__find_program_by_name(obj, prog_name);
 	map = bpf_object__find_map_by_name(obj, MAP_NAME);
 	if (!prog || !map) {
-		fprintf(stderr, "object %s: program '%s' %s, map '%s' %s\n", obj_path, PROG_NAME,
+		fprintf(stderr, "object %s: program '%s' %s, map '%s' %s\n", obj_path, prog_name,
 			prog ? "found" : "NOT found", MAP_NAME, map ? "found" : "NOT found");
 		goto out;
 	}
@@ -127,7 +178,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	/* No SA_RESTART: nanosleep must return EINTR so the loop sees g_stop. */
+	/* No SA_RESTART: sleeping/polling must return EINTR so the loop sees g_stop. */
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = on_signal;
 	sigaction(SIGINT, &sa, NULL);
@@ -135,43 +186,69 @@ int main(int argc, char **argv)
 
 	start = prev_t = now_ns();
 	next_tick = start + NS_PER_SEC;
-	printf("START iface=%s ifindex=%u object=%s prog_fd=%d map_fd=%d\n", argv[1], ifindex,
-	       obj_path, prog_fd, map_fd);
+	printf("START iface=%s ifindex=%u object=%s prog=%s prog_fd=%d map_fd=%d drain=%d\n", iface,
+	       ifindex, obj_path, prog_name, prog_fd, map_fd, drain);
 	fflush(stdout);
 
 	while (!g_stop) {
-		struct timespec target = {.tv_sec = (time_t)(next_tick / NS_PER_SEC),
-					  .tv_nsec = (long)(next_tick % NS_PER_SEC)};
-		uint64_t t;
-		double dt;
+		uint64_t t = now_ns();
 
-		if (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &target, NULL) != 0 && g_stop)
-			break;
-		t = now_ns();
-		next_tick += NS_PER_SEC;
-		if (next_tick <= t) /* stalled: resync instead of bursting */
-			next_tick = t + NS_PER_SEC;
-		if (read_counters(map_fd, &dropped, &matched)) {
-			perror("bpf_map_lookup_elem");
-			goto out;
+		if (t >= next_tick) {
+			double dt = (double)(t - prev_t) / (double)NS_PER_SEC;
+
+			next_tick += NS_PER_SEC;
+			if (next_tick <= t) /* stalled: resync instead of bursting */
+				next_tick = t + NS_PER_SEC;
+			if (read_counters(map_fd, &dropped, &matched)) {
+				perror("bpf_map_lookup_elem");
+				goto out;
+			}
+			printf("t=%.3fs total=%" PRIu64 " matched=%" PRIu64 " dropped=%" PRIu64
+			       " | pps total=%.0f matched=%.0f dropped=%.0f",
+			       (double)(t - start) / (double)NS_PER_SEC, dropped + matched, matched,
+			       dropped, (double)((dropped + matched) - (prev_dropped + prev_matched)) / dt,
+			       (double)(matched - prev_matched) / dt,
+			       (double)(dropped - prev_dropped) / dt);
+			if (drain)
+				printf(" | rx_packets=%" PRIu64 " rx_bytes=%" PRIu64 " rx_pps=%.0f", rx_pkts,
+				       rx_bytes, (double)(rx_pkts - prev_rx_pkts) / dt);
+			printf("\n");
+			fflush(stdout);
+			prev_dropped = dropped;
+			prev_matched = matched;
+			prev_rx_pkts = rx_pkts;
+			prev_rx_bytes = rx_bytes;
+			prev_t = t;
+			continue;
 		}
-		dt = (double)(t - prev_t) / (double)NS_PER_SEC;
-		printf("t=%.3fs total=%" PRIu64 " matched=%" PRIu64 " dropped=%" PRIu64
-		       " | pps total=%.0f matched=%.0f dropped=%.0f\n",
-		       (double)(t - start) / (double)NS_PER_SEC, dropped + matched, matched, dropped,
-		       (double)((dropped + matched) - (prev_dropped + prev_matched)) / dt,
-		       (double)(matched - prev_matched) / dt, (double)(dropped - prev_dropped) / dt);
-		fflush(stdout);
-		prev_dropped = dropped;
-		prev_matched = matched;
-		prev_t = t;
-	}
 
-	/* Final reading before detaching. */
+		if (drain) {
+			struct pollfd pfd = {.fd = sock, .events = POLLIN, .revents = 0};
+			int ms = (int)((next_tick - t + UINT64_C(999999)) / UINT64_C(1000000));
+
+			if (poll(&pfd, 1, ms) > 0 && (pfd.revents & POLLIN))
+				drain_socket(sock, &rx_pkts, &rx_bytes);
+		} else {
+			struct timespec target = {.tv_sec = (time_t)(next_tick / NS_PER_SEC),
+						  .tv_nsec = (long)(next_tick % NS_PER_SEC)};
+
+			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &target, NULL);
+		}
+	}
+	(void)prev_rx_bytes;
+
+	/* Drain whatever is still queued, then read the counters one last time before detaching. */
+	if (drain)
+		while (drain_socket(sock, &rx_pkts, &rx_bytes) == DRAIN_BATCH)
+			;
 	if (read_counters(map_fd, &dropped, &matched) == 0) {
-		printf("FINAL t=%.3fs total=%" PRIu64 " matched=%" PRIu64 " dropped=%" PRIu64 "\n",
+		printf("FINAL t=%.3fs total=%" PRIu64 " matched=%" PRIu64 " dropped=%" PRIu64,
 		       (double)(now_ns() - start) / (double)NS_PER_SEC, dropped + matched, matched,
 		       dropped);
+		if (drain)
+			printf(" delivered_packets=%" PRIu64 " delivered_bytes=%" PRIu64, rx_pkts,
+			       rx_bytes);
+		printf("\n");
 	} else {
 		perror("bpf_map_lookup_elem(final)");
 	}

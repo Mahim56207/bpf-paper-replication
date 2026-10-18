@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Phase 4 verify: load the Phase 3 filter with build/loader, drive paced match traffic (port 4040)
 # plus noise (ports 5050/5051), and cross-check the counters against tcpdump.
-# Usage: sudo bash scripts/phase4_verify.sh [logdir] 2>&1 | tee logs/p4_verify.log
+# Usage: sudo bash scripts/phase4_verify.sh [logdir] [loader-flags] 2>&1 | tee logs/p4_verify.log
+#   loader-flags: optional, e.g. "-d" (drain mode, Phase 6a regression); default none (Phase 4 behaviour).
 #
 # Cross-check rules (stated before any run; justified in docs/phase4_notes.md):
 #   matched: |loader matched - tcpdump(port 4040) captured| <= max(10, captured/200) + tcpdump dropped
@@ -13,11 +14,15 @@
 #   total:   |loader (slot0+slot1) - tcpdump(no filter) "received by filter"| <= max(10, received/200)
 #   dropped: slot 0 must be > 0 (the noise traffic and background frames), and
 #            L2 view: slot 1 must be > 0 on real traffic (the filter parses ethhdr at offset 0).
+#   drain (only when loader-flags contains -d; added in Phase 6a, declared before it was run):
+#            |delivered_packets - matched| <= max(10, matched/200) AND socket kernel_drops <= max(10, matched/200),
+#            i.e. every accepted packet was read and the socket queue never overflowed. PASS/FAIL.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 LOG="${1:-$ROOT/logs}"
+LFLAGS="${2:-}"
 mkdir -p "$LOG"
 LOADER="$ROOT/build/loader"
 VA=p1veth0; IPA=10.0.0.1; IPB=10.0.0.2; NS=p2ns
@@ -77,10 +82,10 @@ for f in "$LOADER" build/phase3_kern.o /usr/bin/iperf3 /usr/bin/tcpdump; do
 done
 mountpoint -q /sys/fs/bpf || mount -t bpf bpf /sys/fs/bpf
 
-echo "== phase4_verify $(date -u +%Y-%m-%dT%H:%M:%SZ) arch=$(uname -m) kernel=$(uname -r)"
+echo "== phase4_verify $(date -u +%Y-%m-%dT%H:%M:%SZ) arch=$(uname -m) kernel=$(uname -r) loader-flags='$LFLAGS'"
 
 # stale processes from an aborted run
-pkill -KILL -f "build/loader $VA" 2>/dev/null
+pkill -KILL -f "build/loader.*$VA" 2>/dev/null
 pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null
 systemctl stop p4-td4040 p4-tdall 2>/dev/null; systemctl reset-failed p4-td4040 p4-tdall 2>/dev/null
 sleep 0.5
@@ -96,7 +101,8 @@ td_start p4-td4040 "port 4040"; T4040_SINCE=$TD_SINCE
 td_start p4-tdall ""; TALL_SINCE=$TD_SINCE
 wait_for 5 bash -c "journalctl -u p4-td4040 --since '@$T4040_SINCE' -o cat --no-pager | grep -q 'listening on'" || echo "WARN: tcpdump(4040) not listening"
 wait_for 5 bash -c "journalctl -u p4-tdall --since '@$TALL_SINCE' -o cat --no-pager | grep -q 'listening on'" || echo "WARN: tcpdump(all) not listening"
-"$LOADER" "$VA" > "$LOG/p4_run.log" 2>&1 &
+# shellcheck disable=SC2086
+"$LOADER" $LFLAGS "$VA" > "$LOG/p4_run.log" 2>&1 &
 LOADER_PID=$!
 wait_for 10 grep -q '^START' "$LOG/p4_run.log" || { echo "FATAL: loader did not start"; cat "$LOG/p4_run.log"; exit 1; }
 cat "$LOG/p4_run.log"
@@ -182,6 +188,16 @@ say "6. cross-check"
         if ((ld > 0)); then echo "CHECK dropped slot moved: PASS (slot0=$ld)"; else echo "CHECK dropped slot moved: FAIL (slot0=0)"; fi
         if ((lm > 0)); then echo "L2 VIEW: CONFIRMED (slot1=$lm > 0 on real traffic; the filter parses ethhdr at offset 0)"
         else echo "L2 VIEW: NOT CONFIRMED (slot1=0)"; fi
+        if [[ "$LFLAGS" == *-d* ]]; then
+            dp=$(sed -n 's/^FINAL t=.* delivered_packets=\([0-9]*\).*/\1/p' "$LOG/p4_run.log")
+            if [[ -z "$dp" || -z "$sk" ]]; then echo "CHECK drain: FAIL (delivered_packets or kernel_drops missing)"
+            else
+                ddiff=$((dp - lm)); ((ddiff < 0)) && ddiff=$((-ddiff))
+                dbase=$((lm / 200)); ((dbase < 10)) && dbase=10
+                echo "drain: delivered_packets=$dp matched=$lm abs_diff=$ddiff allowance=$dbase; socket kernel_drops=$sk allowance=$dbase"
+                if ((ddiff <= dbase && sk <= dbase)); then echo "CHECK drain: PASS"; else echo "CHECK drain: FAIL"; fi
+            fi
+        fi
     fi
 } 2>&1 | tee "$LOG/p4_crosscheck.log"
 
