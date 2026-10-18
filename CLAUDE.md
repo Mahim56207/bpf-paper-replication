@@ -20,3 +20,4 @@ WORKFLOW
   string "Phase N complete".
 - Same error twice => stop, show the error plus two hypotheses, ask me. No silent architecture changes.
 - Unsure => write "UNVERIFIED: <thing>" and ask me. Guessing is a contract violation.
+- After my exact message 'Phase N complete', re-run that phase's verify script (tee to logs/), then create ONE commit titled 'Phase N: <one-line summary>' covering src/, scripts/, logs/, results/, docs/ deltas, and push to origin. Never commit build artifacts or secrets.
