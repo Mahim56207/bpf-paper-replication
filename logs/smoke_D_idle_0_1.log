@@ -1,0 +1,93 @@
+# bench label=smoke session=smoke_1792349122 attempt=1 cfg=D traffic=idle size=0 rep=1 pps_target=0 dur=5 payload=-42
+# clk_tck=100 kernel=6.17.0-19-generic start=2026-10-18T18:45:22Z
+# pinning cap=2 srv=3 cli_match=4 cli_noise=1
+# capture_cmd=build/loader -d -p reject_all p1veth0 build/phase6_filters.o
+### capture
+START iface=p1veth0 ifindex=4 object=build/phase6_filters.o prog=reject_all prog_fd=5 map_fd=4 drain=1
+t=1.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=2.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=3.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=4.002s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=5.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=6.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=7.002s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+t=8.001s total=0 matched=0 dropped=0 | pps total=0 matched=0 dropped=0 | rx_packets=0 rx_bytes=0 rx_pps=0
+FINAL t=8.106s total=0 matched=0 dropped=0 delivered_packets=0 delivered_bytes=0
+FINAL_SOCKET kernel_packets=0 kernel_drops=0
+
+### classifier
+START classifier iface=p1veth0 ifindex=4 object=build/phase6_classify.o
+CLS T=0 F4040=0 C4040=0 F5050=0 C5050=0 X=0 IDENTITY=ok
+
+### pidstat
+Linux 6.17.0-19-generic (Ubuntu) 	10/19/2026 	_aarch64_	(5 CPU)
+
+12:15:22 AM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+12:15:23 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:24 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:25 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:26 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:27 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:28 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+12:15:29 AM     0     11562    0.00    0.00    0.00    0.00    0.00     2  loader
+Average:        0     11562    0.00    0.00    0.00    0.00    0.00     -  loader
+
+### pidstat_w
+Linux 6.17.0-19-generic (Ubuntu) 	10/19/2026 	_aarch64_	(5 CPU)
+
+12:15:22 AM   UID       PID   cswch/s nvcswch/s  Command
+12:15:23 AM     0     11562      1.00      0.00  loader
+12:15:24 AM     0     11562      1.00      0.00  loader
+12:15:25 AM     0     11562      1.00      0.00  loader
+12:15:26 AM     0     11562      1.00      0.00  loader
+12:15:27 AM     0     11562      1.00      0.00  loader
+12:15:28 AM     0     11562      1.00      0.00  loader
+12:15:29 AM     0     11562      0.99      0.00  loader
+Average:        0     11562      1.00      0.00  loader
+
+### vmstat
+procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu
+ 2  0 1350312 204888  17776 2102268  282  661  3028  1570 5297   15 20 10 70  0  0  0
+ 0  0 1350276 203736  17788 2102284    0    0     0   512 2946 4335  1  1 97  0  0  0
+ 1  0 1350268 203632  17788 2103808    0    0     8     0 2958 4270  2  2 96  0  0  0
+ 1  0 1350204 206296  17788 2104072    0    0     0     0 2977 4344  3  2 95  0  0  0
+ 0  0 1350184 210400  17788 2102716    0    0     0     0 4468 6352  8  5 87  0  0  0
+ 2  0 1349928 211380  17816 2098804  184    0  3980   128 5590 7528 13  6 81  0  0  0
+ 0  0 1349924 200916  17816 2099572    0    0     0     0 4556 6608  6  3 91  0  0  0
+
+### stat_before
+time 1792349123.694536823
+cpu  191389 14374 98697 726061 2993 0 3515 0 0 0
+cpu0 37574 3348 19452 144722 622 0 1704 0 0 0
+cpu1 38557 6017 19866 142515 632 0 500 0 0 0
+cpu2 39448 1332 19634 145822 629 0 377 0 0 0
+cpu3 37874 959 19795 147793 565 0 300 0 0 0
+cpu4 37935 2716 19949 145208 542 0 633 0 0 0
+ctxt 15741473
+pid_stat 11562 (loader) S 11542 11132 11131 34817 11131 4194560 582 139 0 0 0 0 0 0 20 0 1 0 213315 4489216 599 18446744073709551615 216676884742144 216676884750652 281474547986400 0 0 0 512 3145732 16386 1 0 0 17 2 0 0 0 0 0 216676884872328 216676884873232 216677241974784 281474547988164 281474547988225 281474547988225 281474547990507 0
+voluntary_ctxt_switches:	5
+nonvoluntary_ctxt_switches:	2
+
+### stat_after
+time 1792349128.699087689
+cpu  191545 14374 98778 728297 2995 0 3521 0 0 0
+cpu0 37612 3348 19466 145162 622 0 1708 0 0 0
+cpu1 38585 6017 19885 142962 633 0 501 0 0 0
+cpu2 39477 1332 19650 146271 629 0 377 0 0 0
+cpu3 37905 959 19809 148243 565 0 300 0 0 0
+cpu4 37964 2716 19966 145657 542 0 633 0 0 0
+ctxt 15770581
+pid_stat 11562 (loader) S 11542 11132 11131 34817 11131 4194560 582 139 0 0 0 0 0 0 20 0 1 0 213315 4489216 599 18446744073709551615 216676884742144 216676884750652 281474547986400 0 0 0 512 3145732 16386 1 0 0 17 2 0 0 0 0 0 216676884872328 216676884873232 216677241974784 281474547988164 281474547988225 281474547988225 281474547990507 0
+voluntary_ctxt_switches:	10
+nonvoluntary_ctxt_switches:	2
+
+### map_before
+[{"key":["0x00","0x00","0x00","0x00"],"value":["0x00","0x00","0x00","0x00","0x00","0x00","0x00","0x00"],"formatted":{"key":0,"value":0}},{"key":["0x01","0x00","0x00","0x00"],"value":["0x00","0x00","0x00","0x00","0x00","0x00","0x00","0x00"],"formatted":{"key":1,"value":0}}]
+
+### map_after
+[{"key":["0x00","0x00","0x00","0x00"],"value":["0x00","0x00","0x00","0x00","0x00","0x00","0x00","0x00"],"formatted":{"key":0,"value":0}},{"key":["0x01","0x00","0x00","0x00"],"value":["0x00","0x00","0x00","0x00","0x00","0x00","0x00","0x00"],"formatted":{"key":1,"value":0}}]
+
+### client_exit
+
+# end=2026-10-18T18:45:30Z

@@ -15,5 +15,9 @@ for cfg in A B C D E; do
     echo "SMOKE cfg=$cfg wall-clock for the run: $(( $(date +%s) - t1 )) s (5 s of traffic)"
 done
 echo "== SMOKE total wall-clock: $(( $(date +%s) - t0 )) s for 5 runs"
+echo "--- SMOKE idle windows (3 x 5 s, harness attached, no traffic)"
+BENCH_LABEL=smoke BENCH_SESSION="smoke_$(date +%s)" bash scripts/bench.sh idle 5 < /dev/null
+echo "--- SMOKE self-check: V5'e identity T = F + C + X on the captured runs"
+python3 -I scripts/summarize.py selfcheck logs/smoke_[A-E]_m_512_1.log
 python3 -I scripts/summarize.py smoke
 [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER": results logs 2>/dev/null

@@ -6,6 +6,7 @@
 #   topology                     write results/topology.md                                                (no traffic, no root)
 #   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> logs/bench_<cfg>_<traffic>_<size>_<rep>.log   (root, generates traffic)
 #                                BENCH_LABEL=smoke -> logs/smoke_*.log (smoke runs: excluded from analysis)
+#   idle [DUR]                   3 idle windows (harness attached, no traffic): idle baseline and canary_max (A2)   (root)
 #   calibrate                    find config A's loss-free ceiling -> results/calibration.json            (root, generates traffic)
 #   run [plan]                   execute the plan: warm-ups first (discarded), then the blocks in order   (root, generates traffic)
 #
@@ -191,27 +192,28 @@ cmd_one() {
     need_root
     local cfg="$1" traffic="$2" size="$3" rep="$4" pps="${5:-0}" dur="${6:-$DUR}"
     # BENCH_LABEL=smoke writes logs/smoke_*.log (excluded from analysis by pre-declaration); default label: bench
-    local label="${BENCH_LABEL:-bench}"
+    local label="${BENCH_LABEL:-bench}" session="${BENCH_SESSION:-nosession}" attempt="${BENCH_ATTEMPT:-1}"
     local name="${label}_${cfg}_${traffic}_${size}_${rep}"
     OUT="logs/$name.log"
     local tmp; tmp="$(mktemp -d)"
-    local payload=$((size - 42)) ports="" cap_pid="" srv_pids="" cli_pids=""
+    local payload=$((size - 42)) ports="" cap_pid="" cls_pid="" srv_pids="" cli_pids=""
     local rate=$((pps * payload * 8))
     : > "$OUT"
     lab_check
-    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer)" 2>/dev/null
+    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer|classifier)" 2>/dev/null
     rm -f /sys/fs/bpf/repl_p3   # a stale pinned Phase 3 program would make `bpftool map ... name p3_counters` ambiguous
 
     case "$traffic" in
         nm) ports="$NOISE_PORT" ;;
-        m|warmup|cal) ports="$MATCH_PORT" ;;
+        m|warmup|cal|env) ports="$MATCH_PORT" ;;
         flood) ports="$MATCH_PORT $NOISE_PORT" ;;
+        idle) ports="" ;;   # A2: harness attached, no traffic
         *) echo "FATAL: bad traffic $traffic" >&2; return 1 ;;
     esac
     [[ "$traffic" == cal ]] && ports="$NOISE_PORT"   # calibration uses non-matching traffic
 
     {
-        echo "# bench label=$label cfg=$cfg traffic=$traffic size=$size rep=$rep pps_target=$pps dur=$dur payload=$payload"
+        echo "# bench label=$label session=$session attempt=$attempt cfg=$cfg traffic=$traffic size=$size rep=$rep pps_target=$pps dur=$dur payload=$payload"
         echo "# clk_tck=$(getconf CLK_TCK) kernel=$(uname -r) start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# pinning cap=$CPU_CAP srv=$CPU_SRV cli_match=$CPU_MATCH_CLI cli_noise=$CPU_NOISE_CLI"
         echo "# capture_cmd=$(cap_cmd "$cfg")"
@@ -223,6 +225,11 @@ cmd_one() {
         srv_pids="$srv_pids $!"
     done
     for p in $ports; do wait_for 5 ip netns exec "$NS" bash -c "ss -ltn | grep -q ':$p '" || echo "WARN: iperf3 server $p not listening" >> "$OUT"; done
+
+    # classifier tap (A1): identical for every config, pinned to the free core, started before the capture process
+    taskset -c "$CPU_SYS" build/classifier "$VA" > "$tmp/cls.log" 2>&1 &
+    cls_pid=$!
+    wait_for 10 grep -q '^START' "$tmp/cls.log" || echo "WARN: classifier did not print START" >> "$OUT"
 
     # capture process
     # shellcheck disable=SC2046
@@ -253,15 +260,18 @@ cmd_one() {
         k=$((k + 1))
     done
     for c in $cli_pids; do wait "$c"; echo "client_exit $?" >> "$tmp/cli_exit"; done
+    [[ "$traffic" == idle ]] && sleep "$dur"
     stat_snapshot "$cap_pid" "$tmp/stat_after"
     [[ "$cfg" != A ]] && bpftool -j map dump name p3_counters > "$tmp/map_after.json" 2>&1
     sleep 2   # let the last instrumentation samples land
 
     # stop capture (TERM; not AppArmor-confined), then collect
     kill -TERM "$cap_pid" 2>/dev/null; wait "$cap_pid" 2>/dev/null
+    kill -TERM "$cls_pid" 2>/dev/null; wait "$cls_pid" 2>/dev/null
     for s in $srv_pids; do kill -TERM "$s" 2>/dev/null; wait "$s" 2>/dev/null; done
 
     section capture "$tmp/cap.log"
+    section classifier "$tmp/cls.log"
     section pidstat "$tmp/pidstat.log"
     section pidstat_w "$tmp/pidstat_w.log"
     section vmstat "$tmp/vmstat.log"
@@ -281,16 +291,29 @@ cmd_one() {
     echo "run done: $OUT"
 }
 
+############################################################ idle windows (A2, M1)
+# idle [dur]: 3 windows with the harness attached (config D capture process, classifier, pidstat, vmstat), no traffic
+cmd_idle() {
+    need_root
+    local k dur="${1:-$DUR}"
+    for k in 1 2 3; do cmd_one D idle 0 "$k" 0 "$dur"; done
+}
+
 ############################################################ calibrate
 cmd_calibrate() {
     need_root
     fix_owner
-    local size pps
+    export BENCH_SESSION="cal_$(date +%s)"
+    local size pps k
     for size in 64 1500; do
         for pps in "${CAL_LADDER[@]}"; do
             cmd_one A cal "$size" "$pps" "$pps" "$CAL_DUR"
         done
     done
+    # V5'c envelope at the matrix duration (10 s) and the idle/canary baseline windows (D6.6 release conditions b, d)
+    for k in 1 2 3; do cmd_one A env 512 "$k" 1000 "$DUR"; done
+    cmd_idle "$DUR"
+    python3 -I scripts/summarize.py baseline
     python3 -I scripts/summarize.py calibrate
     fix_owner
 }
@@ -302,12 +325,27 @@ cmd_run() {
     local plan="${1:-results/bench_plan.tsv}"
     [[ -f "$plan" ]] || { echo "FATAL: no plan; run 'bench.sh plan' first" >&2; exit 1; }
     [[ -f results/calibration.json ]] || { echo "FATAL: results/calibration.json missing; run 'bench.sh calibrate' first" >&2; exit 1; }
+    [[ -f results/baseline_calibration.json ]] || { echo "FATAL: results/baseline_calibration.json missing (canary_max); run 'bench.sh calibrate' first" >&2; exit 1; }
+    export BENCH_SESSION="run_$(date +%s)"
     local p_curve; p_curve="$(python3 -I -c 'import json;print(json.load(open("results/calibration.json"))["p_curve"])')"
-    echo "curve pps = $p_curve (from results/calibration.json); plan = $plan"
+    echo "curve pps = $p_curve (from results/calibration.json); plan = $plan; session = $BENCH_SESSION"
+    echo "--- session idle windows (M1): 3 x ${DUR} s, harness attached, no traffic"
+    cmd_idle "$DUR" < /dev/null
+    mkdir -p logs/attempts
     grep -v '^#' "$plan" | while IFS=$'\t' read -r seq phase cls cfg traffic size rep; do
         echo "[$seq] $phase $cls cfg=$cfg traffic=$traffic size=$size rep=$rep"
         local pps="$p_curve"; [[ "$traffic" == flood ]] && pps=0
-        cmd_one "$cfg" "$traffic" "$size" "$rep" "$pps" < /dev/null
+        local attempt=1 name="bench_${cfg}_${traffic}_${size}_${rep}" rc
+        while :; do
+            BENCH_ATTEMPT="$attempt" cmd_one "$cfg" "$traffic" "$size" "$rep" "$pps" < /dev/null
+            [[ "$phase" == warmup ]] && break
+            python3 -I scripts/summarize.py canary "logs/$name.log"; rc=$?
+            [[ $rc -ne 1 ]] && break                  # 0 clean, 2 not evaluable: keep the run
+            if (( attempt >= 3 )); then echo "V8: cell $name still contaminated after 2 re-runs (kept; it will be INCONCLUSIVE)"; break; fi
+            mv "logs/$name.log" "logs/attempts/${name}_a${attempt}.log"
+            echo "V8: attempt $attempt of $name contaminated; re-running"
+            attempt=$((attempt + 1))
+        done
     done
     python3 -I scripts/summarize.py
     fix_owner
@@ -319,6 +357,7 @@ case "${1:-}" in
     topology) cmd_topology ;;
     one) shift; cmd_one "$@" ;;
     calibrate) cmd_calibrate ;;
+    idle) shift; cmd_idle "$@" ;;
     run) shift; cmd_run "$@" ;;
     *) sed -n '2,15p' "${BASH_SOURCE[0]}"; exit 2 ;;
 esac

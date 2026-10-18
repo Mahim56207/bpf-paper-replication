@@ -129,3 +129,9 @@ New symbols beyond the Phase 4 tables. Grepped before use. Format: symbol | file
 | `EAGAIN` / `EWOULDBLOCK` | /usr/include/asm-generic/errno-base.h:15 / errno.h:22 | not tested explicitly: any `recvfrom` failure just ends a drain batch |
 | `MSG_TRUNC`, `recvfrom` | see Phase 2 table | real packet length in `rx_bytes`; full-size copy (128 KiB buffer) |
 No new libbpf function is used. `src/phase6_filters.c` uses only symbols already recorded for Phase 3 (`SEC`, `__uint`, `__type`, `__always_inline`, `bpf_map_lookup_elem`, `struct __sk_buff`, `BPF_MAP_TYPE_ARRAY`).
+
+## Phase 6 C3: classifier tap (src/phase6_classify.c, src/classifier.c)
+No new libbpf function or BPF helper beyond those already recorded (Phase 3: `bpf_skb_load_bytes`, `bpf_map_lookup_elem`, `SEC`, `__uint`, `__type`, `__always_inline`, `struct __sk_buff`, `BPF_MAP_TYPE_ARRAY`; Phase 4: `bpf_object__open_file`, `bpf_object__load`, `bpf_object__find_program_by_name`, `bpf_object__find_map_by_name`, `bpf_program__fd`, `bpf_map__fd`, `bpf_map_lookup_elem`, `bpf_object__close`, `SO_ATTACH_BPF`, `SO_DETACH_BPF`). One libc call is new:
+| symbol | file:line | use |
+|---|---|---|
+| `nanosleep` | /usr/include/time.h:281 | the classifier loader sleeps in 1 s steps until SIGTERM/SIGINT (no per-second work) |
