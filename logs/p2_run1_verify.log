@@ -1,0 +1,82 @@
+== phase2_verify 2026-10-18T10:26:56Z arch=aarch64 kernel=6.17.0-19-generic
+
+== Stage A: both addresses in the root namespace (topology as first specified)
+6: p1veth0@p1veth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 1e:94:73:a4:07:40 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.1/24 scope global p1veth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1c94:73ff:fea4:740/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+5: p1veth1@p1veth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 92:cb:c2:49:2b:3b brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.2/24 scope global p1veth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::3889:d4ff:fe1a:2a08/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### ip route get 10.0.0.2 (from 10.0.0.1)
+local 10.0.0.2 from 10.0.0.1 dev lo uid 0 
+    cache <local> 
+iperf3 client exit=0
+[  5]   0.00-2.00   sec  9.94 GBytes  42.7 Gbits/sec    1            sender
+[  5]   0.00-2.00   sec  9.94 GBytes  42.7 Gbits/sec                  receiver
+
+iperf Done.
+### Stage A sniffer on p1veth0:
+FINAL t=3.132s total_packets=57 matched_packets=0 total_bytes=7378 truncated=0
+FINAL_KERNEL kernel_packets=57 kernel_drops=0
+
+== Stage B: p1veth1 in namespace p2ns (measured run)
+### root namespace: ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute 
+       valid_lft forever preferred_lft forever
+2: enp0s8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 08:00:27:03:ca:3a brd ff:ff:ff:ff:ff:ff
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s8
+       valid_lft 83950sec preferred_lft 83950sec
+    inet6 fd17:625c:f037:2:a00:27ff:fe03:ca3a/64 scope global dynamic noprefixroute 
+       valid_lft 86067sec preferred_lft 14067sec
+    inet6 fe80::a00:27ff:fe03:ca3a/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+8: p1veth0@if7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 1e:03:ef:ff:36:fa brd ff:ff:ff:ff:ff:ff link-netns p2ns
+    inet 10.0.0.1/24 scope global p1veth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1c03:efff:feff:36fa/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### namespace p2ns: ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host proto kernel_lo 
+       valid_lft forever preferred_lft forever
+7: p1veth1@if8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 92:cb:c2:49:2b:3b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.0.2/24 scope global p1veth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::90cb:c2ff:fe49:2b3b/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### ip route get 10.0.0.2
+10.0.0.2 dev p1veth0 src 10.0.0.1 uid 0 
+    cache 
+
+== iperf3 TCP, 5 s, 10.0.0.1 -> 10.0.0.2:4040
+iperf3 tcp client exit=0
+[ ID] Interval           Transfer     Bitrate         Retr
+[  5]   0.00-5.01   sec  5.93 GBytes  10.2 Gbits/sec    9            sender
+[  5]   0.00-5.01   sec  5.93 GBytes  10.2 Gbits/sec                  receiver
+
+iperf Done.
+
+== iperf3 UDP, 2 s, 50 Mbit/s (exercises the UDP branch)
+iperf3 udp client exit=0
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total Datagrams
+[  5]   0.00-2.00   sec  11.9 MBytes  50.0 Mbits/sec  0.000 ms  0/8637 (0%)  sender
+[  5]   0.00-2.00   sec  11.9 MBytes  49.9 Mbits/sec  0.029 ms  15/8637 (0.17%)  receiver
+
+iperf Done.

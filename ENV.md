@@ -27,3 +27,7 @@ Raw logs: logs/phase0_env_probe.log (Phase 0 probe, before setup), logs/phase1_e
 - Phase 0 gaps (clang missing, libbpf version unknown) are resolved by the rows above; the pre-setup probe is kept in logs/phase0_env_probe.log.
 - Phase 1 verify: 0 FAIL on the first run, logs/phase1_verify.log. Includes a real `bpftool prog load` of a trivial XDP program through the verifier and a veth pair create/delete.
 
+## Added in Phase 2
+- Processes started from the Claude desktop terminal are labelled `claude-desktop (unconfined)` (`cat /proc/self/attr/current` in logs/p2_apparmor_probe.log; the labels of the sudo chain and of the stuck tcpdump (`claude-desktop (unconfined)` vs `tcpdump (enforce)`) were shown in-session but not logged). tcpdump runs as `tcpdump (enforce)` and its profile accepts signals only from `unconfined` peers (/etc/apparmor.d/abstractions/base:146), so root's `kill`/`pkill` on tcpdump fails with EPERM from here. Workaround in use: `systemd-run` / `systemctl stop` (see DEVIATIONS.md D2.8).
+- `sudo` needs a password here (`sudo -n true` fails); privileged scripts run in the user's Terminal tabs.
+- Lab network (left up after Phase 2): `p1veth0` 10.0.0.1/24 in the root namespace, `p1veth1` 10.0.0.2/24 in namespace `p2ns`. Remove with `sudo bash scripts/phase2_verify.sh teardown`.

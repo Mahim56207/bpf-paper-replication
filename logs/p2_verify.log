@@ -1,0 +1,144 @@
+== phase2_verify 2026-10-18T10:49:22Z arch=aarch64 kernel=6.17.0-19-generic
+scripts/phase2_verify.sh: line 96: 14556 Killed                  systemd-run --quiet --wait --collect pkill -KILL -f "tcpdump -i $VA" 2> /dev/null
+
+== Stage B topology: p1veth1 in namespace p2ns
+### root namespace: ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute 
+       valid_lft forever preferred_lft forever
+2: enp0s8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 08:00:27:03:ca:3a brd ff:ff:ff:ff:ff:ff
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s8
+       valid_lft 82606sec preferred_lft 82606sec
+    inet6 fd17:625c:f037:2:a00:27ff:fe03:ca3a/64 scope global dynamic noprefixroute 
+       valid_lft 86324sec preferred_lft 14324sec
+    inet6 fe80::a00:27ff:fe03:ca3a/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+12: p1veth0@if11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 1e:03:ef:ff:36:fa brd ff:ff:ff:ff:ff:ff link-netns p2ns
+    inet 10.0.0.1/24 scope global p1veth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1c03:efff:feff:36fa/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### namespace p2ns: ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host proto kernel_lo 
+       valid_lft forever preferred_lft forever
+11: p1veth1@if12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 92:cb:c2:49:2b:3b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.0.0.2/24 scope global p1veth1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::90cb:c2ff:fe49:2b3b/64 scope link tentative proto kernel_ll 
+       valid_lft forever preferred_lft forever
+### ip route get 10.0.0.2
+10.0.0.2 dev p1veth0 src 10.0.0.1 uid 0 
+    cache 
+
+== [] iperf3 TCP 5 s (-b 100M) 10.0.0.1 -> 10.0.0.2:4040
+iperf3 tcp client exit=0
+[ ID] Interval           Transfer     Bitrate         Retr
+[  5]   0.00-5.00   sec  59.6 MBytes   100 Mbits/sec    0            sender
+[  5]   0.00-5.00   sec  59.6 MBytes   100 Mbits/sec                  receiver
+
+iperf Done.
+
+== [] iperf3 UDP 2 s (-b 50M)
+iperf3 udp client exit=0
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total Datagrams
+[  5]   0.00-2.01   sec  11.9 MBytes  49.9 Mbits/sec  0.000 ms  0/8631 (0%)  sender
+[  5]   0.00-2.01   sec  11.9 MBytes  49.9 Mbits/sec  0.063 ms  0/8631 (0%)  receiver
+
+iperf Done.
+
+== [] sniffer output (/home/mahim/bpf-repl/logs/p2_run.log)
+START iface=p1veth0 ifindex=12 match_port=4040 buf_size=131072
+STAT t=1.376s total_packets=15 matched_packets=0 total_bytes=1649 truncated=0
+STAT t=4.243s total_packets=1024 matched_packets=988 total_bytes=28774587 truncated=0
+STAT t=6.832s total_packets=2048 matched_packets=2008 total_bytes=61217211 truncated=0
+STAT t=7.911s total_packets=6144 matched_packets=6103 total_bytes=68636152 truncated=0
+STAT t=8.860s total_packets=10240 matched_packets=10198 total_bytes=74737809 truncated=0
+STAT t=10.026s total_packets=10783 matched_packets=10741 total_bytes=75527580 truncated=0
+STAT t=10.857s total_packets=10783 matched_packets=10741 total_bytes=75527580 truncated=0
+STAT t=11.897s total_packets=10783 matched_packets=10741 total_bytes=75527580 truncated=0
+FINAL t=12.016s total_packets=10783 matched_packets=10741 total_bytes=75527580 truncated=0
+FINAL_KERNEL kernel_packets=10783 kernel_drops=0
+
+== [] tcpdump stderr (/home/mahim/bpf-repl/logs/p2_tcpdump.log)
+Started p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_capture.pcap "port 4040".
+tcpdump: listening on p1veth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+Stopping p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_capture.pcap "port 4040"...
+10729 packets captured
+10741 packets received by filter
+12 packets dropped by kernel
+p2-tcpdump.service: Deactivated successfully.
+Stopped p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_capture.pcap "port 4040".
+p2-tcpdump.service: Consumed 517ms CPU time, 76M memory peak.
+
+== [] cross-check
+sniffer: total_packets=10783 matched_packets=10741 kernel_drops=0
+tcpdump: captured(summary)=10729 dropped_by_kernel(summary)=12 packets_in_savefile=10729
+abs_diff=12 allowance=65 (base=53 + sniffer_drops=0 + tcpdump_drops=12)
+CROSSCHECK[]: PASS
+
+== [full_] iperf3 TCP 5 s () 10.0.0.1 -> 10.0.0.2:4040
+iperf3 tcp client exit=0
+[ ID] Interval           Transfer     Bitrate         Retr
+[  5]   0.00-5.01   sec  4.58 GBytes  7.85 Gbits/sec    6            sender
+[  5]   0.00-5.01   sec  4.58 GBytes  7.85 Gbits/sec                  receiver
+
+iperf Done.
+
+== [full_] iperf3 UDP 2 s (-b 50M)
+iperf3 udp client exit=0
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total Datagrams
+[  5]   0.00-2.00   sec  11.9 MBytes  50.0 Mbits/sec  0.000 ms  0/8643 (0%)  sender
+[  5]   0.00-2.01   sec  11.5 MBytes  47.8 Mbits/sec  0.056 ms  341/8643 (3.9%)  receiver
+
+iperf Done.
+
+== [full_] sniffer output (/home/mahim/bpf-repl/logs/p2_full_run.log)
+START iface=p1veth0 ifindex=12 match_port=4040 buf_size=131072
+STAT t=1.025s total_packets=14336 matched_packets=14336 total_bytes=499550921 truncated=0
+STAT t=2.006s total_packets=61440 matched_packets=61439 total_bytes=949657650 truncated=0
+STAT t=3.040s total_packets=112640 matched_packets=112638 total_bytes=1221948143 truncated=0
+STAT t=4.018s total_packets=126976 matched_packets=126974 total_bytes=1713264151 truncated=0
+STAT t=5.001s total_packets=142336 matched_packets=142334 total_bytes=2239366335 truncated=0
+STAT t=6.094s total_packets=151552 matched_packets=151550 total_bytes=2350239545 truncated=0
+STAT t=7.129s total_packets=155648 matched_packets=155646 total_bytes=2356342585 truncated=0
+STAT t=8.091s total_packets=156195 matched_packets=156193 total_bytes=2357138315 truncated=0
+STAT t=9.130s total_packets=156195 matched_packets=156193 total_bytes=2357138315 truncated=0
+STAT t=10.170s total_packets=156195 matched_packets=156193 total_bytes=2357138315 truncated=0
+FINAL t=10.362s total_packets=156195 matched_packets=156193 total_bytes=2357138315 truncated=0
+FINAL_KERNEL kernel_packets=319908 kernel_drops=163713
+
+== [full_] tcpdump stderr (/home/mahim/bpf-repl/logs/p2_full_tcpdump.log)
+Started p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_full_capture.pcap "port 4040".
+tcpdump: listening on p1veth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+94281 packets captured
+319905 packets received by filter
+225624 packets dropped by kernel
+Stopping p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_full_capture.pcap "port 4040"...
+p2-tcpdump.service: Deactivated successfully.
+Stopped p2-tcpdump.service - [systemd-run] /usr/bin/tcpdump -i p1veth0 -nn -Z root --immediate-mode -U -w /home/mahim/bpf-repl/logs/p2_full_capture.pcap "port 4040".
+p2-tcpdump.service: Consumed 3.455s CPU time, 649.9M memory peak.
+
+== [full_] cross-check
+sniffer: total_packets=156195 matched_packets=156193 kernel_drops=163713
+tcpdump: captured(summary)=94281 dropped_by_kernel(summary)=225624 packets_in_savefile=94281
+abs_diff=61912 allowance=389808 (base=471 + sniffer_drops=163713 + tcpdump_drops=225624)
+CROSSCHECK[full_]: INCONCLUSIVE (drops 389337 > 1% of 94281 captured)
+
+== Cleanup
+### leftover processes (expect none):
+none
+### topology left up for later phases (sudo bash scripts/phase2_verify.sh teardown removes it):
+p1veth0@if11     UP             10.0.0.1/24 fe80::1c03:efff:feff:36fa/64 
+p1veth1@if12     UP             10.0.0.2/24 fe80::90cb:c2ff:fe49:2b3b/64 

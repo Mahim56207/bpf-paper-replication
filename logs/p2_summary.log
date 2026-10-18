@@ -1,0 +1,22 @@
+== Stage A (both addresses in root namespace; logs/p2_stageA*.log)
+ip route get 10.0.0.2 from 10.0.0.1: local 10.0.0.2 from 10.0.0.1 dev lo uid 0
+sniffer on p1veth0: total_packets=57 matched_packets=0 kernel_drops=0
+iperf3 client (receiver line): [  5]   0.00-2.00   sec  9.94 GBytes  42.7 Gbits/sec                  receiver
+
+== Stage B paced: TCP 100 Mbit/s 5 s + UDP 50 Mbit/s 2 s
+sniffer  total_packets=10783 matched_packets=10741 unmatched=42 total_bytes=75527580 truncated=0
+sniffer  mean bytes/packet copied = 7004
+sniffer  kernel_packets=10783 kernel_drops=0 (0.00% of packets that reached the socket)
+tcpdump  captured=10729 received_by_filter=10741 dropped_by_kernel=12
+savefile packets=10729 (tcp=2108, udp=8621)
+sniffer matched_packets - tcpdump received_by_filter = 0
+sniffer kernel_packets  - tcpdump received_by_filter = 42
+
+== Stage B fullrate: TCP unlimited 5 s + UDP 50 Mbit/s 2 s
+sniffer  total_packets=156195 matched_packets=156193 unmatched=2 total_bytes=2357138315 truncated=0
+sniffer  mean bytes/packet copied = 15091
+sniffer  kernel_packets=319908 kernel_drops=163713 (51.18% of packets that reached the socket)
+tcpdump  captured=94281 received_by_filter=319905 dropped_by_kernel=225624
+savefile packets=94281 (tcp=86277, udp=8004)
+sniffer matched_packets - tcpdump received_by_filter = -163712
+sniffer kernel_packets  - tcpdump received_by_filter = 3
