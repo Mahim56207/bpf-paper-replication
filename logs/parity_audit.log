@@ -1,0 +1,67 @@
+# Instrumentation parity audit (configs A to E)
+
+## 1. Capture command and pinning, from each smoke log header
+A: # pinning cap=2 srv=3 cli_match=4 cli_noise=1 | # capture_cmd=build/baseline_sniffer p1veth0
+B: # pinning cap=2 srv=3 cli_match=4 cli_noise=1 | # capture_cmd=build/loader -d p1veth0 build/phase3_kern.o
+C: # pinning cap=2 srv=3 cli_match=4 cli_noise=1 | # capture_cmd=build/loader p1veth0 build/phase3_kern.o
+D: # pinning cap=2 srv=3 cli_match=4 cli_noise=1 | # capture_cmd=build/loader -d -p reject_all p1veth0 build/phase6_filters.o
+E: # pinning cap=2 srv=3 cli_match=4 cli_noise=1 | # capture_cmd=build/loader -d -p accept_all p1veth0 build/phase6_filters.o
+
+## 2. Sections recorded per run (identical sets mean identical instrumentation)
+A: 10 sections
+B: 12 sections; not in A: ['map_before', 'map_after']
+C: 12 sections; not in A: ['map_before', 'map_after']
+D: 12 sections; not in A: ['map_before', 'map_after']
+E: 12 sections; not in A: ['map_before', 'map_after']
+
+## 3. In-window instrumentation is config-independent in bench.sh (one command path for all configs)
+bench.sh:239: pidstat -p "$cap_pid" 1 $((dur + 2)) > "$tmp/pidstat.log" 2>&1 &
+bench.sh:240: pidstat -w -p "$cap_pid" 1 $((dur + 2)) > "$tmp/pidstat_w.log" 2>&1 &
+bench.sh:241: vmstat 1 $((dur + 2)) > "$tmp/vmstat.log" 2>&1 &
+bench.sh:243: stat_snapshot "$cap_pid" "$tmp/stat_before"
+bench.sh:256: stat_snapshot "$cap_pid" "$tmp/stat_after"
+bench.sh:229: taskset -c "$CPU_CAP" $(cap_cmd "$cfg") > "$tmp/cap.log" 2>&1 &
+
+## 4. Config-specific steps in bench.sh (guarded by cfg != A) and where they sit relative to the measured window
+bench.sh:232: [[ "$cfg" != A ]] && {
+bench.sh:257: [[ "$cfg" != A ]] && bpftool -j map dump name p3_counters > "$tmp/map_after.json" 2>&1
+bench.sh:270: [[ "$cfg" != A ]] && { section map_before "$tmp/map_before.json"; section map_after "$tmp/map_after.json"; }
+order of events by line number: [('map_before.json', 235), ('stat_snapshot "$cap_pid" "$tmp/stat_before"', 243), ('stat_snapshot "$cap_pid" "$tmp/stat_after"', 256), ('map_after.json', 257)]
+=> the map dumps are taken before stat_before and after stat_after, i.e. outside the measured window.
+
+## 5. Per-run program-side logging cadence
+baseline_sniffer (A):
+  src/baseline_sniffer.c:38: #define CLOCK_CHECK_MASK 1023u
+  src/baseline_sniffer.c:161: if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof(tmo)) < 0) {
+  src/baseline_sniffer.c:162: perror("setsockopt(SO_RCVTIMEO)");
+  src/baseline_sniffer.c:199: check_clock = (c.total_packets & CLOCK_CHECK_MASK) == 0;
+  src/baseline_sniffer.c:206: report("STAT", now - start, &c);
+  src/baseline_sniffer.c:215: if (getsockopt(fd, SOL_PACKET, PACKET_STATISTICS, &st, &stlen) == 0)
+  src/baseline_sniffer.c:218: perror("getsockopt(PACKET_STATISTICS)");
+loader (B to E):
+  src/loader.c:188: next_tick = start + NS_PER_SEC;
+  src/loader.c:197: double dt = (double)(t - prev_t) / (double)NS_PER_SEC;
+  src/loader.c:199: next_tick += NS_PER_SEC;
+  src/loader.c:201: next_tick = t + NS_PER_SEC;
+  src/loader.c:202: if (read_counters(map_fd, &dropped, &matched)) {
+  src/loader.c:229: if (poll(&pfd, 1, ms) > 0 && (pfd.revents & POLLIN))
+  src/loader.c:235: clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &target, NULL);
+  src/loader.c:244: if (read_counters(map_fd, &dropped, &matched) == 0) {
+  src/loader.c:255: if (getsockopt(sock, SOL_PACKET, PACKET_STATISTICS, &st, &stlen) == 0)
+Difference: both print once per second; the loader additionally performs two bpf_map_lookup_elem syscalls per second
+(inside the window); A has none. Both read PACKET_STATISTICS once, at exit (outside the window).
+
+## 6. Per-CPU busy seconds of every smoke run (pinned: capture core 2, server core 3, client core 4; cores 0 and 1 unused)
+cfg   window  cpu0 cpu1 cpu2 cpu3 cpu4   (busy s)   total   total per cpu-s of window
+A       5.05  1.16 1.42 1.10 0.98 1.09     5.77   0.23
+B       5.05  2.97 2.77 2.72 2.43 2.74    13.63   0.54
+C       5.06  1.52 1.32 1.37 1.22 1.29     6.71   0.27
+D       5.04  1.05 1.11 1.12 0.80 1.06     5.13   0.20
+E       5.04  1.42 1.48 1.11 1.08 1.09     6.22   0.25
+
+## 7. Reading
+The two unused cores (0, 1) carry no work of any config; in the B run they are as elevated as the pinned cores, so the
+elevation is not caused by B's capture process or by any B-specific step above (all B-specific steps are outside the window
+or run on the same cores for every config). The sections list and the in-window command path are identical across configs
+except the loader's 1 Hz map reads. This points to contamination by ambient load, not a parity violation; one run per config
+cannot prove it, which is what the canary rule (V6') and idle windows (A2) are for.

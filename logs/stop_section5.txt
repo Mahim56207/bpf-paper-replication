@@ -1,0 +1,17 @@
+## 5. Validity and verdict rules (pre-declared; constants in `scripts/summarize.py`)
+
+Run validity. A run failing any rule is INCONCLUSIVE: it stays in `runs.json` with its reasons, is listed in `results/exclusions.md`, and is excluded from the tables.
+- V1: iperf3 client exit 0 and client and server JSON parse.
+- V2: the capture process printed its FINAL line; snapshots and counters readable.
+- V3: curve and warm-up runs: offered pps within +-5% of the target.
+- V4: curve runs, every config except C: socket drops <= 0.1% of packets that reached the socket.
+- V5: conservation: |tap_total - offered_pkts| <= max(20, 0.5% x offered_pkts) (covers ARP/IPv6 and the iperf3 control connection).
+- V6: measured window within dur - 1 s to dur + 2 s.
+- V7 (D6.1 item 6): steal > 5% of capacity. If more than 20% of a config's measured runs are V7-excluded, that config is INCONCLUSIVE in every table and verdict.
+A (cfg, traffic, size) point needs at least 2 valid reps, otherwise it is INCONCLUSIVE. This inherits the Phase 2 discipline: rules are stated before any run, and a failure is investigated, not accommodated by widening a rule.
+
+Verdict rules (D6.1 item 7): shape and sign, with 95% confidence intervals only. No absolute comparison with 1993 numbers, no ratio without an interval.
+- **C2** (non-matching traffic, system CPU per offered packet over the D floor, fit against size): SUPPORTED if the slope for A has a 95% CI entirely above 0 (user-space copy-then-filter grows with size) AND the slope for B has a 95% CI containing 0 (kernel filter flat); NOT SUPPORTED if A's CI does not exclude 0 from above; otherwise MIXED. The D floor's own slope is reported (it reflects generator and veth size dependence and is removed by the subtraction).
+- **C3** (matching traffic, system CPU per matched packet, fit against size): SUPPORTED if the slope CIs for both A and B lie above 0 AND the difference intercept(A) - intercept(B) has a 95% CI above 0 (A's fixed per-packet cost is above B's); MIXED if only some of these hold; NOT SUPPORTED if neither slope CI is above 0. Slopes and intercepts are reported with their CIs; E is shown as the accept-all comparator.
+- **C4** (flood): SUPPORTED if the Welch 95% CI of the matched-pps ceiling difference (B - A) is above 0 AND the delta-method 95% CI of the factor (CPU per matched packet of A) / (that of B) is above 1; NOT SUPPORTED if neither holds; otherwise MIXED. If A is not saturated (socket drops <= 1% of packets reaching it), its figure is offered-load-limited and is reported as such. C4's CSPF ratio is not replicated end-to-end.
+
