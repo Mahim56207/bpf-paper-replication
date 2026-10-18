@@ -16,3 +16,4 @@ for cfg in A B C D E; do
 done
 echo "== SMOKE total wall-clock: $(( $(date +%s) - t0 )) s for 5 runs"
 python3 -I scripts/summarize.py smoke
+[[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER": results logs 2>/dev/null

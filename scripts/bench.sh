@@ -147,6 +147,8 @@ cmd_topology() {
 
 ############################################################ helpers for runs
 need_root() { [[ $EUID -eq 0 ]] || { echo "FATAL: this subcommand needs sudo" >&2; exit 1; }; }
+# Files written as root must stay owned by the invoking user, so later non-root summarize runs can rewrite them.
+fix_owner() { [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER": results logs 2>/dev/null; return 0; }
 
 section() { # section <name> <file>  (appends "### name" + file to the run log)
     { echo "### $1"; cat "$2" 2>/dev/null; echo; } >> "$OUT"
@@ -274,6 +276,7 @@ cmd_one() {
     done
     echo "# end=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUT"
     rm -rf "$tmp"
+    fix_owner
     sleep 3
     echo "run done: $OUT"
 }
@@ -281,6 +284,7 @@ cmd_one() {
 ############################################################ calibrate
 cmd_calibrate() {
     need_root
+    fix_owner
     local size pps
     for size in 64 1500; do
         for pps in "${CAL_LADDER[@]}"; do
@@ -288,11 +292,13 @@ cmd_calibrate() {
         done
     done
     python3 -I scripts/summarize.py calibrate
+    fix_owner
 }
 
 ############################################################ run
 cmd_run() {
     need_root
+    fix_owner
     local plan="${1:-results/bench_plan.tsv}"
     [[ -f "$plan" ]] || { echo "FATAL: no plan; run 'bench.sh plan' first" >&2; exit 1; }
     [[ -f results/calibration.json ]] || { echo "FATAL: results/calibration.json missing; run 'bench.sh calibrate' first" >&2; exit 1; }
@@ -304,6 +310,7 @@ cmd_run() {
         cmd_one "$cfg" "$traffic" "$size" "$rep" "$pps" < /dev/null
     done
     python3 -I scripts/summarize.py
+    fix_owner
 }
 
 ############################################################ main

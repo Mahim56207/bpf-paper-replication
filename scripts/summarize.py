@@ -47,7 +47,7 @@ def sections(text):
         if line.startswith("### "):
             cur = line[4:].strip()
             out[cur] = []
-        elif cur is not None:
+        elif cur is not None and not line.startswith("# "):  # the "# end=..." footer is not part of a section
             out[cur].append(line)
     return {k: "\n".join(v).strip("\n") for k, v in out.items()}
 
@@ -326,7 +326,7 @@ def calibrate():
 
 # ---------------------------------------------------------------- smoke
 def smoke():
-    files = sorted(glob.glob(str(LOGS / "smoke_*.log")))
+    files = [f for f in sorted(glob.glob(str(LOGS / "smoke_*.log"))) if "# bench label=" in Path(f).read_text()]
     if not files:
         print("no logs/smoke_*.log found")
         return 1
