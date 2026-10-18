@@ -38,18 +38,47 @@ build/           build artifacts (not tracked)
 sudo bash scripts/phase1_setup.sh
 ```
 
-`scripts/phase1_setup.sh` is created in Phase 1; it does not exist yet.
 
 ## Status
 
-- [ ] Phase 0: bootstrap
-- [ ] Phase 0.5: version control + GitHub
-- [ ] Phase 1: setup
-- [ ] Phase 2
-- [ ] Phase 3
-- [ ] Phase 4
-- [ ] Phase 5: verifier rejections
-- [ ] Phase 6: results tables
+- [x] Phase 0: bootstrap
+- [x] Phase 0.5: version control + GitHub
+- [x] Phase 1: setup
+- [x] Phase 2: user-space baseline
+- [x] Phase 3: eBPF kernel filter
+- [x] Phase 4: loader and map reader
+- [x] Phase 5: verifier stress test
+- [x] Phase 6: benchmark (6a design and harness, calibration, matrix); sub-phase 6c (CSPF stand-in, claim C1) not run
+- [x] Phase 7: final report (`REPORT.md`), figures, historical comparison
+
+Final results and verdicts: **[REPORT.md](REPORT.md)**; rule text and amendments: `docs/phase6_design.md`, `docs/phase6_addenda.md`, `DEVIATIONS.md`.
+
+## Reproducibility
+
+Everything below was run on the machine in `ENV.md` (Ubuntu 25.10, arm64, kernel 6.17). The committed logs under `logs/` and `results/` are the evidence; the figures are regenerated from them without any privileged step.
+
+```bash
+git clone https://github.com/Mahim56207/bpf-paper-replication.git
+cd bpf-paper-replication
+
+# 1. Figures from the committed logs (no sudo, no traffic). Needs matplotlib:
+sudo apt install python3-matplotlib
+python3 scripts/reproduce_figures.py      # writes results/fig_cpu_cost.png, results/fig_drop_rate.png, results/figures_data.json
+python3 scripts/build_report.py           # regenerates REPORT.md from results/, logs/, ENV.md and git
+
+# 2. Re-running the experiments on your own machine (privileged; it creates a veth pair and a network namespace)
+sudo bash scripts/phase1_setup.sh         # toolchain, bpf_jit_enable, veth
+bash scripts/build_all.sh                 # builds build/ (not committed)
+sudo bash scripts/bench.sh calibrate      # calibration under rule V5'
+sudo bash scripts/bench.sh run            # the pre-registered 110-row matrix (about 40 minutes; leave the machine idle)
+python3 -I scripts/summarize.py           # results/summary.md, exclusions.md, verdicts.md
+```
+
+What a reviewer should see after step 1:
+
+- `results/fig_cpu_cost.png`: three panels. The first two plot net CPU per packet against frame size for the reject curve (configs A, B and the D floor) and the accept curve (A, B and E), with error bars; the error bars are of the same order as the differences between configs, which is what the MIXED and INCONCLUSIVE verdicts for C2 and C3 say. The third panel is the flood (A, B, C), the only place config C exists.
+- `results/fig_drop_rate.png`: capture-socket drop rate against offered load. The calibration ladder of the quiet session stays at zero up to the top of the ladder, the first (busy-desktop) calibration shows drops that grow with load and are non-monotonic at the top step (not explained, `REPORT.md`), and the flood points show config A and B near zero and config C (no consumer) near the maximum.
+- `results/figures_data.json` holds the plotted values and `REPORT.md` quotes the same numbers; if a regenerated number differs, the logs, not the report, are the source.
 
 ## License
 

@@ -533,6 +533,7 @@ def main():
     idle = [r for r in allruns if r["traffic"] == "idle" and r["session"] == session]
     attempts = [parse_run(f) for f in sorted(glob.glob(str(LOGS / "attempts" / "*.log")))]
     idle_rate = statistics.mean(r["busy_sec_total"] / r["window_s"] for r in idle) if len(idle) >= 3 else None
+    session_idle_rate = idle_rate
     # D6.13: SUMMARIZE_IDLE_BASELINE=calibration replaces the session idle windows (contaminated by startup noise, 0.843 CPU-s/s)
     # with the quiet calibration baseline from results/baseline_calibration.json.
     idle_src = os.environ.get("SUMMARIZE_IDLE_BASELINE", "session")
@@ -774,7 +775,7 @@ def main():
                        f"A saturated (socket drops > 1% of packets reaching it) in {len(sat)} of {len(fl['A'])} valid runs"
                        + ("" if len(sat) == len(fl["A"]) else "; where it did not, A's figure is offered-load-limited, not a ceiling") + ". "
                        "C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). "
-                       "Reviewer ruling D6.14: NOT SUPPORTED as a receiver-drop claim. However, it reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.")
+                       "NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.")
         else:
             V["C4"] = ("INCONCLUSIVE", "sd undefined (fewer than 2 valid reps)")
     else:
@@ -788,13 +789,23 @@ def main():
                                                       "steal": {c: list(v) for c, v in cfg_steal.items()}}, indent=1, default=list))
     vd = ["# Verdicts (reviewer rulings D6.13, D6.14 applied): C2, C3, C4", "",
           "Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the tables in results/summary.md and the exclusions in "
-          "results/exclusions.md. C1 waits for sub-phase 6c. No 1993 absolute number is compared. C4 text per reviewer rulings D6.13 (idle baseline) and D6.14.", ""]
+          "results/exclusions.md. C1 waits for sub-phase 6c. No 1993 absolute number is compared. Final wording per reviewer rulings D6.13 (idle baseline) and D6.14, see Notes below.", ""]
     for k, title in (("C2", "C2 reject-all: in-kernel cost flat vs size; user-space copy-then-filter grows (R-C2)"),
                      ("C3", "C3 accept-all: slope and fixed cost, A vs B (R-C3)"), ("C4", "C4 flood: matched-pps ceiling and CPU per matched packet, A vs B (R-C4)")):
         vd += [f"## {title}", "", f"**Verdict: {V[k][0]}**", "", V[k][1], "",
                "Tables: see `results/summary.md` sections " + {"C2": "'Reject curve'", "C3": "'Accept curve' and 'Cost decomposition for config B'", "C4": "'Flood (C4)'"}[k]
                + f". Exclusions: {n_ex} excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: "
                + ", ".join(f"{c} {v[0]}/{v[1]}" for c, v in cfg_steal.items() if v[1]) + ".", ""]
+    bcal = load_baseline()
+    vd += ["## Notes", "",
+           "**D6.13.** Initial session idle windows were contaminated by startup noise (" + (f"{session_idle_rate:.3f}" if session_idle_rate is not None else "n/a") +
+           " CPU-s/s). V8 correctly caught this for active runs, but idle runs lacked V8. C4 CPU-per-packet recalculated using the quiet calibration idle baseline (" +
+           (f"{bcal['idle_rate_mean']:.3f}" if bcal else "n/a") + " CPU-s/s) to ensure validity. C2/C3 slope verdicts are mathematically invariant to this constant offset "
+           "(the labels are unchanged between the two baselines; the numbers move in the third digit because the per-packet offset depends slightly on each run's offered rate; "
+           "the session-idle version is kept in results/session_idle_baseline/).", "",
+           "**D6.14.** Matrix revealed that at >600k pps, the sender's generation context becomes the limiting factor, masking receiver-side drop behavior. "
+           "This is a valid modern architectural finding. C4: NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config "
+           "because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.", ""]
     (RESULTS / "verdicts.md").write_text("\n".join(vd) + "\n")
     print(f"session {session}: parsed {len(allruns)} logs ({len(measured)} measured, {sum(r['valid'] for r in measured)} valid, {n_ex} excluded or re-run); wrote results/summary.md, exclusions.md, verdicts.md")
     return 0

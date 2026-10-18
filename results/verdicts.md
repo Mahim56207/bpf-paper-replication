@@ -1,6 +1,6 @@
 # Verdicts (reviewer rulings D6.13, D6.14 applied): C2, C3, C4
 
-Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the tables in results/summary.md and the exclusions in results/exclusions.md. C1 waits for sub-phase 6c. No 1993 absolute number is compared. C4 text per reviewer rulings D6.13 (idle baseline) and D6.14.
+Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the tables in results/summary.md and the exclusions in results/exclusions.md. C1 waits for sub-phase 6c. No 1993 absolute number is compared. Final wording per reviewer rulings D6.13 (idle baseline) and D6.14, see Notes below.
 
 ## C2 reject-all: in-kernel cost flat vs size; user-space copy-then-filter grows (R-C2)
 
@@ -22,7 +22,13 @@ Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition
 
 **Verdict: NOT SUPPORTED**
 
-flow-matched pps ceiling B - A = -4.16e+04 pps, 95% CI [-6.08e+04, -2.25e+04] (B higher = CI > 0: False); net CPU per flow-matched packet A/B factor = 0.892, 95% CI [0.816, 0.967] (A costs more = CI > 1: False). A saturated (socket drops > 1% of packets reaching it) in 0 of 4 valid runs; where it did not, A's figure is offered-load-limited, not a ceiling. C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). Reviewer ruling D6.14: NOT SUPPORTED as a receiver-drop claim. However, it reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
+flow-matched pps ceiling B - A = -4.16e+04 pps, 95% CI [-6.08e+04, -2.25e+04] (B higher = CI > 0: False); net CPU per flow-matched packet A/B factor = 0.892, 95% CI [0.816, 0.967] (A costs more = CI > 1: False). A saturated (socket drops > 1% of packets reaching it) in 0 of 4 valid runs; where it did not, A's figure is offered-load-limited, not a ceiling. C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
 
 Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 44 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
+
+## Notes
+
+**D6.13.** Initial session idle windows were contaminated by startup noise (0.843 CPU-s/s). V8 correctly caught this for active runs, but idle runs lacked V8. C4 CPU-per-packet recalculated using the quiet calibration idle baseline (0.131 CPU-s/s) to ensure validity. C2/C3 slope verdicts are mathematically invariant to this constant offset (the labels are unchanged between the two baselines; the numbers move in the third digit because the per-packet offset depends slightly on each run's offered rate; the session-idle version is kept in results/session_idle_baseline/).
+
+**D6.14.** Matrix revealed that at >600k pps, the sender's generation context becomes the limiting factor, masking receiver-side drop behavior. This is a valid modern architectural finding. C4: NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
 
