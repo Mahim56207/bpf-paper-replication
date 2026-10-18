@@ -34,3 +34,6 @@ Raw logs: logs/phase0_env_probe.log (Phase 0 probe, before setup), logs/phase1_e
 
 ## Platform limitation recorded in Phase 3 (reviewer ruling, DEVIATIONS D3.6)
 - `bpftool prog dump jited pinned ...` prints `Error: No JIT disassembly support` on this arm64 machine (logs/p3_verify.log, logs/p3_v2a_no_prefix/p3_verify.log). The JIT itself works: `bpftool prog show` reports `jited 680B` for the Phase 3 program with `bpf_jit_enable=1`. Machine code of JIT-compiled programs cannot be inspected here with bpftool.
+
+## Phase 6 matrix session mode (reviewer ruling 3, D3; release condition f)
+Matrix runs performed in the graphical session. GUI noise mitigated by the V8 canary rule and idle-subtraction (idle baseline 0.131 CPU-s/s, down from 1.0 to 2.7 CPU-s/s in the first smoke runs; canary_max 0.0689 CPU-s/s on cores {0,1}, 0.0369 on core {0}; results/baseline_calibration.json). Attempting a non-graphical session (`systemctl isolate multi-user.target`) was deemed too risky for workflow continuity: it would end the desktop app session this work runs in.
