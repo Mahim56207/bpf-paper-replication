@@ -98,14 +98,14 @@ Each item was marked UNVERIFIED where it arose; nothing here is claimed as a res
 11. **Classifier-tap overhead** was not measured separately; it is common to all configurations by construction.
 12. **JIT output** was not inspected: `bpftool prog dump jited` is unsupported on this arm64 build (`ENV.md`), only `jited <n>B` from `prog show` is known.
 13. **C1** (instruction counts, Fig. 8) and the **CSPF half of C4** are not evaluated; the user-space stack-machine interpreter was never built (sub-phase 6c).
-14. **The 1993 code.** `reference/freebsd-src/sys/net/bpf_filter.c` is absent (D7.1), so every 1993-code `file:line` cell in `results/comparison.md` is UNVERIFIED; the 1993 side is described from the paper with `paper.txt` line citations only.
+14. **The 1993 code.** The 1993-code column of `results/comparison.md` cites today's FreeBSD `sys/net/bpf_filter.c` (pinned commit, D7.2), the descendant of the 1990 to 1993 code and not a 1993 snapshot; the caller `bpf_tap` and the buffer code in `bpf.c` were not read, and whether `bpf_validate` existed in 1993 is not known.
 
 ## Self-audit against CLAUDE.md
 
 GROUNDING
 - *Paper truth cites (paper.txt L<n>).* Followed in `CLAIMS.md` and the phase documents; quotes were checked against their cited lines by script in Phase 0 (`logs/phase0_quote_check.log`). Known gap: C5's wording is not in the paper (item 1 above).
 - *Environment truth = ENV.md; re-probe when unsure.* Followed: ENV.md was re-probed after Phase 1 and extended in Phases 2, 3 and 6.
-- *Oracle consultation recorded in DEVIATIONS.md.* tcpdump (D2.2) is recorded; no 1993-code file was consulted (D7.1).
+- *Oracle consultation recorded in DEVIATIONS.md.* tcpdump (D2.2) is recorded; FreeBSD `bpf_filter.c` is recorded as D7.2.
 
 API DISCIPLINE
 - *Grep installed headers and record the hit before first use.* Followed for every libbpf function, helper and socket option used (`CODE_NOTES.md`, per phase); builtins and libc calls are listed as such. `bpf_skb_load_bytes` and the Phase 6 additions were grepped and recorded before use.
