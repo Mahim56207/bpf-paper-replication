@@ -1,0 +1,71 @@
+$ diff -u src/phase3_kern.c src/phase5_unsafe_a2.c
+--- src/phase3_kern.c	2026-10-18 16:41:27.875782830 +0530
++++ src/phase5_unsafe_a2.c	2026-10-18 22:41:15.322749694 +0530
+@@ -1,4 +1,10 @@
+ /*
++ * phase5_unsafe_a2.c - Phase 5 variant A2 (INTENTIONALLY UNSAFE; do not fix).
++ * phase3_kern.c where the array-map key is a RUNTIME value, key = skb->len & 1, and the map value
++ * is dereferenced WITHOUT a NULL check. With a runtime key the lookup is fallible as far as the
++ * verifier is concerned, so a rejection is expected (map value or NULL).
++ */
++/*
+  * phase3_kern.c - Phase 3 (revision 2): the Phase 2 match rule as an eBPF socket filter.
+  *
+  * Match: IPv4 TCP or UDP with source or destination port 4040. Revision 1 used direct packet
+@@ -42,12 +48,12 @@
+ 	__type(value, __u64);
+ } p3_counters SEC(".maps");
+ 
+-static __always_inline void count(__u32 slot)
++static __always_inline void count(struct __sk_buff *skb)
+ {
+-	__u64 *v = bpf_map_lookup_elem(&p3_counters, &slot);
++	__u32 key = (__u32)(skb->len & 1);
++	__u64 *v = bpf_map_lookup_elem(&p3_counters, &key);
+ 
+-	if (v)
+-		__sync_fetch_and_add(v, 1);
++	__sync_fetch_and_add(v, 1);
+ }
+ 
+ SEC("socket")
+@@ -106,11 +112,11 @@
+ 		goto drop;
+ 	}
+ 
+-	count(SLOT_MATCHED);
++	count(skb);
+ 	return skb->len;
+ 
+ drop:
+-	count(SLOT_DROPPED);
++	count(skb);
+ 	return 0;
+ }
+ 
+
+$ diff -u src/phase5_unsafe_a2.c src/phase5_a2_fixed.c
+--- src/phase5_unsafe_a2.c	2026-10-18 22:41:15.322749694 +0530
++++ src/phase5_a2_fixed.c	2026-10-18 22:41:15.323267738 +0530
+@@ -1,8 +1,7 @@
+ /*
+- * phase5_unsafe_a2.c - Phase 5 variant A2 (INTENTIONALLY UNSAFE; do not fix).
+- * phase3_kern.c where the array-map key is a RUNTIME value, key = skb->len & 1, and the map value
+- * is dereferenced WITHOUT a NULL check. With a runtime key the lookup is fallible as far as the
+- * verifier is concerned, so a rejection is expected (map value or NULL).
++ * phase5_a2_fixed.c - Phase 5 positive control for A2: identical to phase5_unsafe_a2.c but with the
++ * NULL check restored. Expected to load (exit 0), showing that the A2 rejection is specifically
++ * the missing check under a fallible lookup.
+  */
+ /*
+  * phase3_kern.c - Phase 3 (revision 2): the Phase 2 match rule as an eBPF socket filter.
+@@ -53,7 +52,8 @@
+ 	__u32 key = (__u32)(skb->len & 1);
+ 	__u64 *v = bpf_map_lookup_elem(&p3_counters, &key);
+ 
+-	__sync_fetch_and_add(v, 1);
++	if (v)
++		__sync_fetch_and_add(v, 1);
+ }
+ 
+ SEC("socket")

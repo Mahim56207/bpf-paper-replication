@@ -1,0 +1,63 @@
+$ diff -u src/phase3_kern.c src/phase5_unsafe_a.c
+--- src/phase3_kern.c	2026-10-18 16:41:27.875782830 +0530
++++ src/phase5_unsafe_a.c	2026-10-18 22:25:25.802757306 +0530
+@@ -1,4 +1,9 @@
+ /*
++ * phase5_unsafe_a.c - Phase 5 variant A (INTENTIONALLY UNSAFE; do not fix).
++ * phase3_kern.c with the NULL check on the bpf_map_lookup_elem() return removed before the map
++ * value is dereferenced. The verifier is expected to reject it (map-value nullness).
++ */
++/*
+  * phase3_kern.c - Phase 3 (revision 2): the Phase 2 match rule as an eBPF socket filter.
+  *
+  * Match: IPv4 TCP or UDP with source or destination port 4040. Revision 1 used direct packet
+@@ -46,8 +51,7 @@
+ {
+ 	__u64 *v = bpf_map_lookup_elem(&p3_counters, &slot);
+ 
+-	if (v)
+-		__sync_fetch_and_add(v, 1);
++	__sync_fetch_and_add(v, 1);
+ }
+ 
+ SEC("socket")
+
+$ diff -u src/phase3_kern.c src/phase5_unsafe_b.c
+--- src/phase3_kern.c	2026-10-18 16:41:27.875782830 +0530
++++ src/phase5_unsafe_b.c	2026-10-18 22:25:25.802945683 +0530
+@@ -1,4 +1,10 @@
+ /*
++ * phase5_unsafe_b.c - Phase 5 variant B (INTENTIONALLY UNSAFE for a socket filter; do not fix).
++ * phase3_kern.c with direct packet access reintroduced for layer 2: (void *)(long)skb->data and
++ * skb->data_end, pointer arithmetic and a dereference. The verifier is expected to reject it
++ * (context-access whitelist), as it rejected Phase 3 revision 1.
++ */
++/*
+  * phase3_kern.c - Phase 3 (revision 2): the Phase 2 match rule as an eBPF socket filter.
+  *
+  * Match: IPv4 TCP or UDP with source or destination port 4040. Revision 1 used direct packet
+@@ -57,17 +63,17 @@
+ 	__u32 off = 0;
+ 	__u32 ihl_bytes;
+ 	__be16 port_be = BE16(MATCH_PORT);
+-	struct ethhdr eth;
++	void *data = (void *)(long)skb->data;
++	void *data_end = (void *)(long)skb->data_end;
++	struct ethhdr *eth = data;
+ 	struct iphdr ip;
+ 
+-	/* Layer 2 */
+-	if (len < off + sizeof(eth))
+-		goto drop;
+-	if (bpf_skb_load_bytes(skb, off, &eth, sizeof(eth)) < 0)
++	/* Layer 2: direct packet access */
++	if ((void *)(eth + 1) > data_end)
+ 		goto drop;
+-	if (eth.h_proto != BE16(ETH_P_IP))
++	if (eth->h_proto != BE16(ETH_P_IP))
+ 		goto drop;
+-	off += sizeof(eth);
++	off += sizeof(*eth);
+ 
+ 	/* Layer 3 */
+ 	if (len < off + sizeof(ip))

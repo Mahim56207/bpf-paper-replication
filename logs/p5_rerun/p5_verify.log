@@ -1,0 +1,67 @@
+== phase5_verify 2026-10-18T17:22:03Z kernel=6.17.0-19-generic arch=aarch64 bpftool=bpftool v7.7.0
+
+### 0. pin hygiene at start (answers whether the previous run's exit trap removed repl_p5a)
+$ ls /sys/fs/bpf
+repl_p3
+snap
+leftover repl_p5* pins: 0
+
+### 1. variant A (retained as evidence): load, then dump xlated
+$ bpftool prog load build/phase5_unsafe_a.o /sys/fs/bpf/repl_p5a type socket
+exit=0   stderr bytes: 0
+$ bpftool prog dump xlated pinned /sys/fs/bpf/repl_p5a > logs/p5_rerun/p5_a_xlated.log
+xlated lines: 156
+calls to bpf_map_lookup_elem in xlated stream: 0
+other calls in xlated stream:
+       8: (85) call bpf_skb_load_bytes#19608432
+      20: (85) call bpf_skb_load_bytes#19608432
+      50: (85) call bpf_skb_load_bytes#19608432
+      69: (85) call bpf_skb_load_bytes#19608432
+inlined-lookup pattern (map pointer load, 'r0 += r1' arithmetic):
+    123:  83: (18) r1 = map[id:163]
+    124:  85: (07) r1 += 264
+    126:  87: (35) if r0 >= 0x2 goto pc+3
+    127:  88: (67) r0 <<= 3
+    128:  89: (0f) r0 += r1
+    142: 100: (18) r1 = map[id:163]
+    143: 102: (07) r1 += 264
+    145: 104: (35) if r0 >= 0x2 goto pc+3
+    146: 105: (67) r0 <<= 3
+    147: 106: (0f) r0 += r1
+$ bpftool prog show   (full list, logs/p5_rerun/p5_prog_show.log)
+(saved, 83 lines)
+
+### a2
+$ bpftool prog load build/phase5_unsafe_a2.o /sys/fs/bpf/repl_p5a2 type socket 2>logs/p5_rerun/phase5_a2.log
+exit=255
+stderr log bytes: 7582
+
+### b
+$ bpftool prog load build/phase5_unsafe_b.o /sys/fs/bpf/repl_p5b type socket 2>logs/p5_rerun/phase5_b.log
+exit=255
+stderr log bytes: 709
+
+### CONTROL (safe program, same command shape)
+
+### control
+$ bpftool prog load build/phase3_kern.o /sys/fs/bpf/repl_p5control type socket 2>logs/p5_rerun/phase5_control.log
+exit=0
+stderr log bytes: 0
+1750: socket_filter  name phase3_filter  tag 2d534a7c582f82ac  gpl
+	loaded_at 2026-10-18T22:52:04+0530  uid 0
+
+### POSITIVE CONTROL for a2 (NULL check restored)
+
+### a2fixed
+$ bpftool prog load build/phase5_a2_fixed.o /sys/fs/bpf/repl_p5a2fixed type socket 2>logs/p5_rerun/phase5_a2fixed.log
+exit=0
+stderr log bytes: 0
+1756: socket_filter  name phase3_filter  tag 5f2a1f05ac8ed9a4  gpl
+	loaded_at 2026-10-18T22:52:04+0530  uid 0
+
+### pin hygiene at end
+$ ls /sys/fs/bpf
+repl_p3
+snap
+leftover repl_p5* pins: 0
+$ bpftool prog show | grep -c socket_filter  ->  1 (the Phase 3 pin repl_p3, if still present, is not touched)

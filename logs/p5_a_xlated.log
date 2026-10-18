@@ -1,0 +1,156 @@
+int phase3_filter(struct __sk_buff * skb):
+; int phase3_filter(struct __sk_buff *skb)
+   0: (bf) r6 = r1
+; __u32 len = skb->len;
+   1: (61) r7 = *(u32 *)(r6 +112)
+; if (len < off + sizeof(eth))
+   2: (a6) if w7 < 0xe goto pc+76
+   3: (bf) r3 = r10
+   4: (07) r3 += -14
+; if (bpf_skb_load_bytes(skb, off, &eth, sizeof(eth)) < 0)
+   5: (bf) r1 = r6
+   6: (b4) w2 = 0
+   7: (b4) w4 = 14
+   8: (85) call bpf_skb_load_bytes#19608432
+; if (bpf_skb_load_bytes(skb, off, &eth, sizeof(eth)) < 0)
+   9: (c5) if r0 s< 0x0 goto pc+69
+  10: (bf) r1 = r10
+  11: (07) r1 += -14
+; if (eth.h_proto != BE16(ETH_P_IP))
+  12: (69) r1 = *(u16 *)(r1 +12)
+; if (eth.h_proto != BE16(ETH_P_IP))
+  13: (a6) if w7 < 0x22 goto pc+65
+  14: (56) if w1 != 0x8 goto pc+64
+  15: (bf) r3 = r10
+  16: (07) r3 += -36
+; if (bpf_skb_load_bytes(skb, off, &ip, sizeof(ip)) < 0)
+  17: (bf) r1 = r6
+  18: (b4) w2 = 14
+  19: (b4) w4 = 20
+  20: (85) call bpf_skb_load_bytes#19608432
+; if (bpf_skb_load_bytes(skb, off, &ip, sizeof(ip)) < 0)
+  21: (c5) if r0 s< 0x0 goto pc+57
+  22: (bf) r1 = r10
+  23: (07) r1 += -36
+; if (ip.version != 4)
+  24: (71) r1 = *(u8 *)(r1 +0)
+; if (ip.version != 4)
+  25: (54) w1 &= 240
+  26: (56) if w1 != 0x40 goto pc+52
+  27: (bf) r1 = r10
+  28: (07) r1 += -36
+; ihl_bytes = ip.ihl * 4;
+  29: (71) r1 = *(u8 *)(r1 +0)
+; ihl_bytes = ip.ihl * 4;
+  30: (64) w1 <<= 2
+  31: (54) w1 &= 60
+; if (ihl_bytes < sizeof(ip))
+  32: (a6) if w1 < 0x14 goto pc+46
+  33: (bf) r2 = r10
+  34: (07) r2 += -36
+; if (ip.frag_off & BE16(IP_FRAG_OFFSET_MASK))
+  35: (69) r2 = *(u16 *)(r2 +6)
+; if (ip.frag_off & BE16(IP_FRAG_OFFSET_MASK))
+  36: (54) w2 &= 65311
+  37: (56) if w2 != 0x0 goto pc+41
+  38: (bf) r3 = r10
+  39: (07) r3 += -36
+; off += ihl_bytes;
+  40: (bc) w2 = w1
+  41: (04) w2 += 14
+; if (ip.protocol == IPPROTO_TCP) {
+  42: (71) r4 = *(u8 *)(r3 +9)
+; if (ip.protocol == IPPROTO_TCP) {
+  43: (56) if w4 != 0x6 goto pc+17
+; if (len < off + sizeof(tcp))
+  44: (04) w1 += 34
+; if (len < off + sizeof(tcp))
+  45: (ae) if w7 < w1 goto pc+14
+  46: (bf) r3 = r10
+  47: (07) r3 += -56
+; if (bpf_skb_load_bytes(skb, off, &tcp, sizeof(tcp)) < 0)
+  48: (bf) r1 = r6
+  49: (b4) w4 = 20
+  50: (85) call bpf_skb_load_bytes#19608432
+; if (bpf_skb_load_bytes(skb, off, &tcp, sizeof(tcp)) < 0)
+  51: (c5) if r0 s< 0x0 goto pc+8
+  52: (bf) r1 = r10
+  53: (07) r1 += -56
+; if (tcp.source != port_be && tcp.dest != port_be)
+  54: (69) r1 = *(u16 *)(r1 +0)
+; if (tcp.source != port_be && tcp.dest != port_be)
+  55: (16) if w1 == 0xc80f goto pc+40
+  56: (bf) r1 = r10
+  57: (07) r1 += -56
+; if (tcp.source != port_be && tcp.dest != port_be)
+  58: (69) r1 = *(u16 *)(r1 +2)
+; if (tcp.source != port_be && tcp.dest != port_be)
+  59: (16) if w1 == 0xc80f goto pc+36
+  60: (05) goto pc+18
+; } else if (ip.protocol == IPPROTO_UDP) {
+  61: (71) r3 = *(u8 *)(r3 +9)
+; } else if (ip.protocol == IPPROTO_UDP) {
+  62: (56) if w3 != 0x11 goto pc+16
+; if (len < off + sizeof(udp))
+  63: (04) w1 += 22
+; if (len < off + sizeof(udp))
+  64: (ae) if w7 < w1 goto pc+14
+  65: (bf) r3 = r10
+  66: (07) r3 += -56
+; if (bpf_skb_load_bytes(skb, off, &udp, sizeof(udp)) < 0)
+  67: (bf) r1 = r6
+  68: (b4) w4 = 8
+  69: (85) call bpf_skb_load_bytes#19608432
+; if (bpf_skb_load_bytes(skb, off, &udp, sizeof(udp)) < 0)
+  70: (c5) if r0 s< 0x0 goto pc+8
+  71: (bf) r1 = r10
+  72: (07) r1 += -56
+; if (udp.source != port_be && udp.dest != port_be)
+  73: (69) r1 = *(u16 *)(r1 +0)
+; if (udp.source != port_be && udp.dest != port_be)
+  74: (16) if w1 == 0xc80f goto pc+21
+  75: (bf) r1 = r10
+  76: (07) r1 += -56
+; if (udp.source != port_be && udp.dest != port_be)
+  77: (69) r1 = *(u16 *)(r1 +2)
+; if (udp.source != port_be && udp.dest != port_be)
+  78: (16) if w1 == 0xc80f goto pc+17
+  79: (b4) w6 = 0
+  80: (63) *(u32 *)(r10 -56) = r6
+  81: (bf) r2 = r10
+  82: (07) r2 += -56
+; __u64 *v = bpf_map_lookup_elem(&p3_counters, &slot);
+  83: (18) r1 = map[id:157]
+  85: (07) r1 += 264
+  86: (61) r0 = *(u32 *)(r2 +0)
+  87: (35) if r0 >= 0x2 goto pc+3
+  88: (67) r0 <<= 3
+  89: (0f) r0 += r1
+  90: (05) goto pc+1
+  91: (b7) r0 = 0
+  92: (b7) r1 = 1
+; __sync_fetch_and_add(v, 1);
+  93: (db) r1 = atomic64_fetch_add((u64 *)(r0 +0), r1)
+; }
+  94: (bc) w0 = w6
+  95: (95) exit
+  96: (b4) w1 = 1
+  97: (63) *(u32 *)(r10 -56) = r1
+  98: (bf) r2 = r10
+  99: (07) r2 += -56
+; __u64 *v = bpf_map_lookup_elem(&p3_counters, &slot);
+ 100: (18) r1 = map[id:157]
+ 102: (07) r1 += 264
+ 103: (61) r0 = *(u32 *)(r2 +0)
+ 104: (35) if r0 >= 0x2 goto pc+3
+ 105: (67) r0 <<= 3
+ 106: (0f) r0 += r1
+ 107: (05) goto pc+1
+ 108: (b7) r0 = 0
+ 109: (b7) r1 = 1
+; __sync_fetch_and_add(v, 1);
+ 110: (db) r1 = atomic64_fetch_add((u64 *)(r0 +0), r1)
+; return skb->len;
+ 111: (61) r6 = *(u32 *)(r6 +112)
+; return skb->len;
+ 112: (05) goto pc-19
