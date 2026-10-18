@@ -1,17 +1,29 @@
-# ENV.md - environment probe (Phase 0)
+# ENV.md - environment (updated after Phase 1)
 
-Raw log: logs/phase0_env_probe.log. Values are exactly as printed.
+Raw logs: logs/phase0_env_probe.log (Phase 0 probe, before setup), logs/phase1_env_reprobe.log (this table), logs/phase1_verify.log (verify run). Values are exactly as printed.
+
+## Verified after Phase 1 (logs/phase1_env_reprobe.log)
 
 | key | command | observed value |
 |---|---|---|
 | kernel | `uname -r` | `6.17.0-19-generic` |
-| clang | `clang --version \| head -1` | `bash: line 1: clang: command not found` |
-| libbpf (pkg-config) | `pkg-config --modversion libbpf` | `bash: line 1: pkg-config: command not found` |
+| CPU arch | `uname -m` | `aarch64` |
+| dpkg arch | `dpkg --print-architecture` | `arm64` |
+| clang | `clang --version \| head -1` | `Ubuntu clang version 20.1.8 (0ubuntu4)` |
+| libbpf (pkg-config) | `pkg-config --modversion libbpf` | `1.6.2` |
+| libbpf-dev package | `dpkg-query -W libbpf-dev` | `libbpf-dev 1:1.6.2-1` |
+| libbpf header version | `grep LIBBPF_(MAJOR\|MINOR)_VERSION /usr/include/bpf/libbpf_version.h` | `MAJOR 1`, `MINOR 6` |
 | bpftool | `bpftool version` | `bpftool v7.7.0` / `using libbpf v1.7` / `features:` |
-| bpf_jit_enable | `cat /proc/sys/net/core/bpf_jit_enable` | `1` |
+| bpftool path | `command -v bpftool` | `/usr/sbin/bpftool` |
+| bpf_jit_enable (live) | `cat /proc/sys/net/core/bpf_jit_enable` | `1` |
+| bpf_jit_enable (persisted) | `cat /etc/sysctl.d/99-bpf-repl.conf` | `net.core.bpf_jit_enable = 1` |
 | nproc | `nproc` | `5` |
 | BTF | `ls -l /sys/kernel/btf/vmlinux` | `-r--r--r-- 1 root root 7923950 Oct 18 15:21 /sys/kernel/btf/vmlinux` |
+| veth | `lsmod \| grep -m1 '^veth'` | `veth                   36864  0` |
 
-## Gaps
-- UNVERIFIED: installed libbpf version for compilation. `pkg-config` is absent, so the libbpf *library/headers* version is unknown. bpftool reports it is built against libbpf v1.7, which is not necessarily what is in /usr/include/bpf/.
-- clang is not installed, so no BPF C can be compiled yet.
+## Notes
+- libbpf API surface for this repo (CLAUDE.md rule) = the installed headers, libbpf 1.6.x (package 1:1.6.2-1). bpftool's "using libbpf v1.7" is the libbpf bundled inside the bpftool binary, a different thing from the libbpf we compile against; do not use it for API questions.
+- The machine is arm64 (aarch64), not x86. Anything arch-specific (BPF target arch defines, syscall/register names, asm includes) must be checked against this, not assumed.
+- Phase 0 gaps (clang missing, libbpf version unknown) are resolved by the rows above; the pre-setup probe is kept in logs/phase0_env_probe.log.
+- Phase 1 verify: 0 FAIL on the first run, logs/phase1_verify.log. Includes a real `bpftool prog load` of a trivial XDP program through the verifier and a veth pair create/delete.
+
