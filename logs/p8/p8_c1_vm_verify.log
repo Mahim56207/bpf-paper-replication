@@ -1,0 +1,68 @@
+
+### 1. environment (real commands)
+Linux 6.17.0-19-generic aarch64
+gcc (Ubuntu 15.2.0-4ubuntu4) 15.2.0
+valgrind-3.25.1
+1.10.5
+tcpdump version 4.99.5
+Python 3.13.7
+
+### 2. build
+PASS: c1_build.sh (log logs/p6c/p6c_build_verify.log)
+
+### 3. regenerate programs and traces; compare with the frozen hashes in logs/p6c/p6c_design_freeze.log
+PASS: p3_make_packets.py (38 frames)
+PASS: c1_gen_progs.py
+PASS: c1_make_trace.py
+PASS: src/c1_progs/F1_full_any.sm matches frozen hash
+PASS: src/c1_progs/F1_sc_any.sm matches frozen hash
+PASS: src/c1_progs/F2_full_any.sm matches frozen hash
+PASS: src/c1_progs/F2_sc_any.sm matches frozen hash
+PASS: src/c1_progs/F3_full_fused.sm matches frozen hash
+PASS: src/c1_progs/F3_full_general.sm matches frozen hash
+PASS: src/c1_progs/F3_sc_fused.sm matches frozen hash
+PASS: src/c1_progs/F3_sc_general.sm matches frozen hash
+PASS: src/c1_progs/F4_full_any.sm matches frozen hash
+PASS: src/c1_progs/F4_sc_any.sm matches frozen hash
+PASS: build/p6c/traces/corpus38.pcap matches frozen hash
+PASS: build/p6c/traces/edge.pcap matches frozen hash
+PASS: build/p6c/traces/mix_M0.pcap matches frozen hash
+PASS: build/p6c/traces/mix_Mip.pcap matches frozen hash
+PASS: build/p6c/traces/mix_Mnonip.pcap matches frozen hash
+
+### 4. hand-traced M1 check (design section 6, item 3)
+build/p6c/oracle/hand_F1.opt.bpf: No such file or directory
+dump of libpcap's optimized program for 'ip' (code jt jf k; first line = length):
+cat: build/p6c/oracle/hand_F1.opt.bpf: No such file or directory (os error 2)
+hand trace, written from the dump BEFORE the comparison below:
+  [0] code 40 = ldh [12]   [1] code 21 = jeq #2048 jt 0 jf 1   [2] code 6 = ret #65535   [3] code 6 = ret #0
+  frame shorter than 14 bytes: [0] reads outside the packet and returns 0           -> 1 instruction
+  frame of >= 14 bytes, ethertype 0x0800: [0], [1], [2]                              -> 3 instructions
+  frame of >= 14 bytes, other ethertype:  [0], [1] (false, skips [2]), [3]           -> 3 instructions
+build/p6c/oracle/hand_F1.opt.bpf: No such file or directory
+PASS: e-ip-H-src-cut0        expected 1, interpreter M1 1 (decision 0)
+PASS: e-ip-H-src-cut13       expected 1, interpreter M1 1 (decision 0)
+PASS: e-ip-H-src-cut14       expected 3, interpreter M1 3 (decision 1)
+PASS: e-arp-HG-cut42         expected 3, interpreter M1 3 (decision 0)
+PASS: hand-traced M1 values
+
+### 5. decision equivalence (libpcap oracle, tcpdump, 6 programs x 4 filters x 5 traces)
+PASS: c1_run.py equiv (log logs/p6c/p6c_equiv.log)
+libpcap raw program for F4 identical across traces: yes
+libpcap opt vs raw disagreement recorded: trace=edge filter=F3 frames=6
+equiv: 120 (trace, filter, program) combinations, 746208 frames evaluated, 0 failures
+
+### 6. callgrind chunks (720 runs) and attribution
+PASS: c1_run.py m2 (log logs/p6c/p6c_m2.log)
+m2: 720 callgrind runs, 0 build-agreement failures
+PASS: c1_run.py attrib
+evaluator lines at 100.0%: 0
+FAIL: all collected Ir inside the two evaluators
+
+### 7. summary and verdict
+PASS: c1_summarize.py
+verdict M2: MIXED | M1 (info): MIXED
+decision mismatches: 0 over 746208 frames
+FAIL: results/c1_summary.md identical to the previous run (deterministic)
+
+phase6c_verify: 2 FAIL

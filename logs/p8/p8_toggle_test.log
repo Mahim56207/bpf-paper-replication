@@ -1,0 +1,49 @@
+# toggle test 2026-10-25T13:13:50+05:30 valgrind-3.25.1
+
+$ gcc -O2 -g -std=gnu11 -o build/p8/toggle_gcc-O2 scripts/p8_toggle_test.c -> rc=0
+-- gcc -O2, evaluator = f_leaf; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      120            120.0               120 100.0% scripts/p8_toggle_test.c:f_leaf
+2      240            120.0               240 100.0% scripts/p8_toggle_test.c:f_leaf
+5      600            120.0               600 100.0% scripts/p8_toggle_test.c:f_leaf
+20     2400           120.0               2,400 100.0% scripts/p8_toggle_test.c:f_leaf
+-- gcc -O2, evaluator = f_frame; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      601            601.0               601 100.0% scripts/p8_toggle_test.c:f_frame
+2      1202           601.0               1,202 100.0% scripts/p8_toggle_test.c:f_frame
+5      3005           601.0               3,005 100.0% scripts/p8_toggle_test.c:f_frame
+20     12020          601.0               12,020 100.0% scripts/p8_toggle_test.c:f_frame
+
+$ gcc -O0 -g -std=gnu11 -o build/p8/toggle_gcc-O0 scripts/p8_toggle_test.c -> rc=0
+-- gcc -O0, evaluator = f_leaf; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      26108          26108.0             23,007 88.12% scripts/p8_toggle_test.c:g'2; 1,223 4.68% scripts/p8_toggle_test.c:f_leaf'2; 225 0.86% ./stdio-common/./stdio-common/_fitoa_wor
+2      50376          24268.0             46,048 91.41% scripts/p8_toggle_test.c:g'2; 2,464 4.89% scripts/p8_toggle_test.c:f_leaf'2; 216 0.43% ./stdio-common/./stdio-common/_fitoa_wor
+5      123216         24280.0             115,156 93.46% scripts/p8_toggle_test.c:g'2; 6,187 5.02% scripts/p8_toggle_test.c:f_leaf'2; 225 0.18% ./stdio-common/./stdio-common/_fitoa_wor
+20     487380         24277.6             460,696 94.53% scripts/p8_toggle_test.c:g'2; 24,802 5.09% scripts/p8_toggle_test.c:f_leaf'2; 234 0.05% ./stdio-common/./stdio-common/_fitoa_wor
+-- gcc -O0, evaluator = f_frame; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      26900          26900.0             23,007 85.53% scripts/p8_toggle_test.c:g'2; 2,007 7.46% scripts/p8_toggle_test.c:f_frame'2; 225 0.84% ./stdio-common/./stdio-common/_fitoa_wor
+2      51960          25060.0             46,048 88.62% scripts/p8_toggle_test.c:g'2; 4,029 7.75% scripts/p8_toggle_test.c:f_frame'2; 216 0.42% ./stdio-common/./stdio-common/_fitoa_wor
+5      127176         25072.0             115,156 90.55% scripts/p8_toggle_test.c:g'2; 10,095 7.94% scripts/p8_toggle_test.c:f_frame'2; 225 0.18% ./stdio-common/./stdio-common/_fitoa_wor
+20     503220         25069.6             460,696 91.55% scripts/p8_toggle_test.c:g'2; 40,425 8.03% scripts/p8_toggle_test.c:f_frame'2; 234 0.05% ./stdio-common/./stdio-common/_fitoa_wor
+
+$ clang -O2 -g -std=gnu11 -o build/p8/toggle_clang-O2 scripts/p8_toggle_test.c -> rc=0
+-- clang -O2, evaluator = f_leaf; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      302            302.0               302 100.0% scripts/p8_toggle_test.c:f_leaf
+2      604            302.0               604 100.0% scripts/p8_toggle_test.c:f_leaf
+5      1510           302.0               1,510 100.0% scripts/p8_toggle_test.c:f_leaf
+20     6040           302.0               6,040 100.0% scripts/p8_toggle_test.c:f_leaf
+-- clang -O2, evaluator = f_frame; g() is ~5000 Ir per call and must not be collected
+calls  collected Ir   Ir per extra call   functions with Ir (top)
+0      0                                  
+1      522            522.0               522 100.0% scripts/p8_toggle_test.c:f_frame
+2      1044           522.0               1,044 100.0% scripts/p8_toggle_test.c:f_frame
+5      2610           522.0               2,610 100.0% scripts/p8_toggle_test.c:f_frame
+20     10440          522.0               10,440 100.0% scripts/p8_toggle_test.c:f_frame

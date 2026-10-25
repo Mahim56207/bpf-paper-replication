@@ -1,0 +1,29 @@
+21:112,139 (100.0%)  PROGRAM TOTALS
+26:90,961 (81.11%)  src/c1_interp.c:c1_eval_sm'2 [/home/mahim/bpf-repl/build/p6c/c1_interp_ir]
+27:18,990 (16.93%)  src/c1_interp.c:main'2 [/home/mahim/bpf-repl/build/p6c/c1_interp_ir]
+155:2,137 ( 1.91%)  => ./debug/./debug/printf_chk.c:__printf_chk (1x)
+180: 6,000 ( 5.35%)      if (off > len || len - off < 2) return 0; /* a word not wholly inside the packet reads as 0 (design 3.2) */
+181: 5,000 ( 4.46%)      return (uint16_t)((p[off] << 8) | p[off + 1]);
+185: 8,000 ( 7.13%)  {
+188: 1,000 ( 0.89%)      const struct sm_insn *pc = prog, *end = prog + n;
+190:12,000 (10.70%)      while (pc < end) {
+191: 3,000 ( 2.68%)          const struct sm_insn *i = pc++;
+193:21,000 (18.73%)          switch (i->op) {
+194: 4,000 ( 3.57%)          case SM_PUSHLIT: stk[sp++] = i->arg; break;
+195:38,000 (33.89%)  => src/c1_interp.c:c1_eval_sm'2 (1,000x)
+196: 5,000 ( 4.46%)          case SM_PUSHWORD: stk[sp++] = word_at(p, len, i->arg); break;
+204:10,000 ( 8.92%)          case SM_EQ: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] == stk[sp]); break;
+205:18,000 (16.05%)  => src/c1_interp.c:c1_eval_sm'2 (1,000x)
+218: 5,000 ( 4.46%)      return sp == 0 || stk[sp - 1] != 0; /* paper.txt L295-296 */
+219:10,000 ( 8.92%)  }
+234:112,139 (100.0%)  => /home/mahim/bpf-repl/src/c1_interp.c:main'2 (1x)
+242: 3,000 ( 2.68%)      for (size_t i = first; i < last; i++) {
+244: 1,998 ( 1.78%)          uint32_t r = is_bpf ? c1_eval_bpf(bp, tr.data[i], tr.len[i], &icount)
+245: 8,992 ( 8.02%)                              : c1_eval_sm(sp, n, tr.data[i], tr.len[i], &icount);
+246:57,081,861 (50902.8%)  => src/c1_interp.c:c1_eval_sm'2 (999x)
+247:112,139 (100.0%)  => src/c1_interp.c:c1_eval_sm (1x)
+248: 1,000 ( 0.89%)          int dec = r != 0;
+249: 1,000 ( 0.89%)          accepts += (uint64_t)dec;
+250: 4,000 ( 3.57%)          hash = (hash ^ (uint64_t)('0' + dec)) * 1099511628211ull;
+251:112,139 (100.0%)  => src/c1_interp.c:main'2 (1x)
+308:110,018 (98.11%)  events annotated
