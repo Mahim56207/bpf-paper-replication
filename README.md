@@ -48,7 +48,7 @@ sudo bash scripts/phase1_setup.sh
 - [x] Phase 3: eBPF kernel filter
 - [x] Phase 4: loader and map reader
 - [x] Phase 5: verifier stress test
-- [x] Phase 6: benchmark (6a design and harness, calibration, matrix); sub-phase 6c (CSPF stand-in, claim C1) not run
+- [x] Phase 6: benchmark (6a design and harness, calibration, matrix); sub-phase 6c (claim C1 instruction counts, two user-space interpreters) run afterwards in a separate x86_64 container (DEVIATIONS D6c.1): verdict in `results/c1_verdict.md`, design in `docs/phase6c_design.md`; REPORT.md predates it and has not been regenerated
 - [x] Phase 7: final report (`REPORT.md`), figures, historical comparison
 
 Final results and verdicts: **[REPORT.md](REPORT.md)**; rule text and amendments: `docs/phase6_design.md`, `docs/phase6_addenda.md`, `DEVIATIONS.md`.
