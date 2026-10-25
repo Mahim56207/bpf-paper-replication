@@ -135,3 +135,21 @@ No new libbpf function or BPF helper beyond those already recorded (Phase 3: `bp
 | symbol | file:line | use |
 |---|---|---|
 | `nanosleep` | /usr/include/time.h:281 | the classifier loader sleeps in 1 s steps until SIGTERM/SIGINT (no per-second work) |
+
+## Phase 6c: C1 instruction counts (src/c1_oracle.c, src/c1_interp.c)
+Environment of this sub-phase: x86_64 container, libpcap 1.10.4 (`logs/p6c/p6c_env_probe.log`). Headers grepped before use (`logs/p6c/p6c_header_grep.log`). These are libpcap symbols, not libbpf; recorded here under the same rule. No libbpf function and no BPF helper is used in 6c.
+
+| symbol | file:line | use |
+|---|---|---|
+| `pcap_open_dead(int, int)` | /usr/include/pcap/pcap.h:518 | handle for compiling a filter with no device (`DLT_EN10MB`, snaplen 65535) |
+| `pcap_compile(pcap_t *, struct bpf_program *, const char *, int, bpf_u_int32)` | /usr/include/pcap/pcap.h:613 | expression to classic-BPF program, optimize flag 1 and 0 |
+| `pcap_offline_filter(const struct bpf_program *, const struct pcap_pkthdr *, const u_char *)` | /usr/include/pcap/pcap.h:626 | the decision oracle: libpcap's own evaluator, non-zero = accept |
+| `pcap_freecode`, `pcap_close`, `pcap_geterr` | /usr/include/pcap/pcap.h:623, :562, :607 | cleanup, error text |
+| `PCAP_NETMASK_UNKNOWN` | /usr/include/pcap/pcap.h:365 | netmask argument of `pcap_compile` |
+| `struct bpf_program` (`bf_len`, `bf_insns`) | /usr/include/pcap/bpf.h:116 | compiled program |
+| `struct bpf_insn` (`code`, `jt`, `jf`, `k`) | /usr/include/pcap/bpf.h:244 | one classic-BPF instruction (paper section 3.3 format: opcode:16, jt:8, jf:8, k:32) |
+| `struct pcap_pkthdr` (`ts`, `caplen`, `len`) | /usr/include/pcap/pcap.h:245 | per-packet header passed to `pcap_offline_filter` |
+| `DLT_EN10MB` | /usr/include/pcap/dlt.h:63 | Ethernet link type |
+| opcode macros `BPF_CLASS`, `BPF_LD`..`BPF_MISC` (:135-143), `BPF_SIZE`/`BPF_W`/`BPF_H`/`BPF_B` (:146-149), `BPF_MODE`/`BPF_IMM`/`BPF_ABS`/`BPF_IND`/`BPF_MEM`/`BPF_LEN`/`BPF_MSH` (:151-157), `BPF_OP`/`BPF_ADD`..`BPF_XOR` (:162-173), `BPF_JA`/`BPF_JEQ`/`BPF_JGT`/`BPF_JGE`/`BPF_JSET` (:180-184), `BPF_SRC`/`BPF_K`/`BPF_X` (:196-198), `BPF_RVAL`/`BPF_A` (:201-202), `BPF_MISCOP`/`BPF_TAX`/`BPF_TXA` (:206-224), `BPF_MEMWORDS` (:285) | /usr/include/pcap/bpf.h | opcode decoding in the register-machine interpreter; `BPF_MSH` is the `4*([k]&0xf)` mode of paper Table 2 |
+| `bpf_filter`, `bpf_validate` | /usr/include/pcap/bpf.h:271, :274 | present in the header but NOT used: the interpreter under test is our own code, `bpf_filter` is not called (the oracle path is `pcap_offline_filter`) |
+Standard C and POSIX calls used (`fopen`, `fread`, `fprintf`, `malloc`, `strtoul`, `qsort`-free) are libc, not recorded further. Port numbers 79 finger, 53 domain, 513 login, 514 shell were read from `/etc/services` (`logs/p6c/p6c_services_grep.log`).

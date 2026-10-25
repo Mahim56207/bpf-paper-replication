@@ -1,0 +1,15 @@
+# diagnosis of opt-vs-raw disagreement, edge trace, F3 (libpcap 1.10.4)
+machine=bpf frames=1054 accepts=221 dechash=10a3734e0dddf0ae
+machine=bpf frames=1054 accepts=215 dechash=2960c95a80f2d0c8
+frames where MY interpreter's opt and raw programs differ (idx, label, caplen, opt decision/vm, raw decision/vm):
+425 e-tcp-sport-53-ihl6-cut40 40 opt=1/11 raw=0/21
+426 e-tcp-sport-53-ihl6-cut41 41 opt=1/11 raw=0/21
+539 e-tcp-sport-513-ihl6-cut40 40 opt=1/12 raw=0/21
+540 e-tcp-sport-513-ihl6-cut41 41 opt=1/12 raw=0/21
+653 e-tcp-sport-514-ihl6-cut40 40 opt=1/13 raw=0/21
+654 e-tcp-sport-514-ihl6-cut41 41 opt=1/13 raw=0/21
+count: 6
+# tcpdump second opinion (optimizer on = default, off = -O), accepts on edge trace F3:
+reading from file build/p6c/traces/edge.pcap, link-type EN10MB (Ethernet), snapshot length 65535
+reading from file build/p6c/traces/edge.pcap, link-type EN10MB (Ethernet), snapshot length 65535
+tcpdump opt accepts 221 tcpdump -O accepts 215
