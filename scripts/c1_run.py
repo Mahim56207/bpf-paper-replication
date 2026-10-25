@@ -7,12 +7,19 @@ equiv : oracle (libpcap) per trace and filter; every interpreter program on ever
         equivalence frame by frame; tcpdump -r match counts; M1 per-frame CSVs of the three mixes
         (gzip, logs/p6c/m1/); table logs/p6c/p6c_equiv.tsv.
 m2    : callgrind runs (toggle-collect on the evaluator), 10 chunks of 1000 frames per mix, filter and
-        program; table logs/p6c/p6c_m2.tsv; build agreement against the M1 CSVs.
-attrib: callgrind_annotate of one run per evaluator (amendment A1 check i).
+        program; table logs/p6c/p6c_m2.tsv (Ir = toggle total T, Ir_eval = evaluator-only E, amendment A3);
+        build agreement against the M1 CSVs.
+attrib: amendment A3 checks (i') leaked share (T - E) / T of every M2 run, reported not gated, and
+        (i'') E of one chunk per evaluator and build equals the evaluator self cost of a whole-program
+        profile taken without --toggle-collect (exit status 1 if not).
+Environment: C1_LOG overrides the output directory (default logs/p6c); C1_EXTRA_IR_BUILDS="label=path,..."
+adds builds of src/c1_interp.c to the (i'') cross-check.
 """
 import concurrent.futures as cf
 import gzip
 import hashlib
+import os
+import re
 import struct
 import subprocess
 import sys
@@ -20,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 B = ROOT / "build" / "p6c"
-LOG = ROOT / "logs" / "p6c"
+LOG = ROOT / os.environ.get("C1_LOG", "logs/p6c")
 TR = B / "traces"
 EXPR = {
     "F1": "ip",
@@ -33,6 +40,9 @@ MIXES = ("M0", "Mip", "Mnonip")
 TRACES = {"M0": "mix_M0", "Mip": "mix_Mip", "Mnonip": "mix_Mnonip", "edge": "edge", "corpus38": "corpus38"}
 PROGS = ("bpf-opt", "bpf-raw", "sm-full-general", "sm-sc-general", "sm-full-fused", "sm-sc-fused")
 CHUNKS, CHUNK = 10, 1000
+# Amendment A3: M2 = Ir attributed to the evaluators and their static helpers (not main, not libc).
+EVAL_FUNCS = ("c1_eval_bpf", "c1_eval_sm", "be16", "be32", "word_at")
+_EVAL_RE = re.compile(r":(%s)('\d+)?$" % "|".join(EVAL_FUNCS))
 
 
 def run(cmd, **kw):
@@ -50,6 +60,19 @@ def prog_file(f, prog, tracekey):
     if prog == "bpf-raw":
         return B / "oracle" / ("%s_%s.raw.bpf" % (tracekey, f))
     return sm_file(f, prog)
+
+
+def eval_ir(profile):
+    """Ir that callgrind_annotate attributes to EVAL_FUNCS (every recursion-level variant) in a callgrind output file."""
+    r = run(["callgrind_annotate", "--threshold=100", "--auto=no", profile])
+    if r.returncode:
+        raise SystemExit("callgrind_annotate failed on %s: %s" % (profile, r.stderr.strip()))
+    total = 0
+    for line in r.stdout.splitlines():
+        m = re.match(r"\s*([0-9,]+) \(\s*[0-9.]+%\)\s+(\S+)", line)
+        if m and _EVAL_RE.search(m.group(2)):
+            total += int(m.group(1).replace(",", ""))
+    return total
 
 
 def machine(prog):
@@ -158,7 +181,7 @@ def m2_task(args):
         if line.startswith("summary:"):
             ir = int(line.split()[1])
     acc = int(r.stdout.split("accepts=")[1].split()[0])
-    return (mix, f, prog, chunk, CHUNK, ir, acc)
+    return (mix, f, prog, chunk, CHUNK, ir, acc, eval_ir(out))
 
 
 def stage_m2():
@@ -168,32 +191,54 @@ def stage_m2():
         res = list(ex.map(m2_task, tasks))
     bad = 0
     with open(LOG / "p6c_m2.tsv", "w") as o:
-        o.write("mix\tfilter\tprogram\tchunk\tframes\tIr\taccepts_ir_build\taccepts_count_build\n")
-        for mix, f, prog, chunk, n, ir, acc in res:
+        o.write("mix\tfilter\tprogram\tchunk\tframes\tIr\taccepts_ir_build\taccepts_count_build\tIr_eval\n")
+        for mix, f, prog, chunk, n, ir, acc, ev in res:
             lines = gzip.open(LOG / "m1" / ("%s_%s_%s.csv.gz" % (mix, f, prog)), "rt").read().splitlines()[1:]
             acc_c = sum(1 for l in lines[chunk * CHUNK:(chunk + 1) * CHUNK] if l.split(",")[1] == "1")
             if acc != acc_c or ir is None:
                 bad += 1
                 print("FAIL build agreement %s %s %s chunk %d: ir_build=%s count_build=%s ir=%s" % (mix, f, prog, chunk, acc, acc_c, ir))
-            o.write("%s\t%s\t%s\t%d\t%d\t%s\t%d\t%d\n" % (mix, f, prog, chunk, n, ir, acc, acc_c))
+            o.write("%s\t%s\t%s\t%d\t%d\t%s\t%d\t%d\t%d\n" % (mix, f, prog, chunk, n, ir, acc, acc_c, ev))
     print("m2: %d callgrind runs, %d build-agreement failures" % (len(res), bad))
     return 1 if bad else 0
 
 
 def stage_attrib():
+    """Amendment A3 checks (i') and (i'')."""
     bad = 0
-    for prog, f in (("bpf-opt", "F3"), ("sm-sc-fused", "F3")):
-        mix = "M0"
-        out = B / "cg" / ("%s_%s_%s_0.out" % (mix, f, prog))
-        if not out.exists():
-            m2_task((mix, f, prog, 0))
-        r = run(["callgrind_annotate", out])
-        print("### callgrind_annotate %s" % out.name)
-        print(r.stdout)
-        # all collected cost must be on c1_eval_* lines
-        funcs = [l for l in r.stdout.splitlines() if "c1_eval_" in l]
-        print("attribution check %s: lines naming an evaluator = %d" % (prog, len(funcs)))
-    return bad
+    rows = [l.split("\t") for l in (LOG / "p6c_m2.tsv").read_text().splitlines()[1:]]
+    print("### A3 (i') leaked share (T - E) / T of every M2 run (reported, not gated)")
+    print("program          runs   min%    mean%   max%")
+    for prog in PROGS:
+        sh = [(int(r[5]) - int(r[8])) / int(r[5]) * 100 for r in rows if r[2] == prog]
+        print("%-16s %-5d %-7.2f %-7.2f %.2f" % (prog, len(sh), min(sh), sum(sh) / len(sh), max(sh)))
+    allsh = [(int(r[5]) - int(r[8])) / int(r[5]) * 100 for r in rows]
+    print("all %d runs: min %.2f%%, max %.2f%%; runs with T == E: %d" % (len(allsh), min(allsh), max(allsh), sum(1 for x in allsh if x == 0)))
+    builds = [("project build (scripts/c1_build.sh)", B / "c1_interp_ir")]
+    for item in filter(None, os.environ.get("C1_EXTRA_IR_BUILDS", "").split(",")):
+        label, path = item.split("=", 1)
+        builds.append((label, Path(path)))
+    print("\n### A3 (i'') E of the toggle run vs evaluator self cost of a whole-program profile without --toggle-collect")
+    (B / "cg").mkdir(parents=True, exist_ok=True)
+    for label, exe in builds:
+        for prog in ("bpf-opt", "sm-sc-fused"):
+            mix, f, chunk = "M0", "F3", 0
+            fn = "c1_eval_bpf" if prog.startswith("bpf") else "c1_eval_sm"
+            args = ["--machine", machine(prog), "--prog", prog_file(f, prog, mix), "--pcap", TR / (TRACES[mix] + ".pcap"),
+                    "--first", chunk * CHUNK, "--count", CHUNK]
+            tag = re.sub(r"\W", "_", label)
+            o_t = B / "cg" / ("a3_%s_%s_toggle.out" % (tag, prog))
+            o_w = B / "cg" / ("a3_%s_%s_whole.out" % (tag, prog))
+            run(["valgrind", "--tool=callgrind", "--toggle-collect=" + fn, "--callgrind-out-file=" + str(o_t), exe] + args)
+            run(["valgrind", "--tool=callgrind", "--callgrind-out-file=" + str(o_w), exe] + args)
+            t_total = int([l for l in o_t.read_text().splitlines() if l.startswith("summary:")][0].split()[1])
+            e_t, e_w = eval_ir(o_t), eval_ir(o_w)
+            ok = e_t == e_w
+            bad += not ok
+            print("%s | %s M0 %s chunk 0 | T=%d E(toggle)=%d self(whole-program)=%d leaked=%.2f%% -> %s" %
+                  (label, prog, f, t_total, e_t, e_w, 100.0 * (t_total - e_t) / t_total, "equal" if ok else "DIFFERENT"))
+    print("attrib (A3): %d cross-check failures" % bad)
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
