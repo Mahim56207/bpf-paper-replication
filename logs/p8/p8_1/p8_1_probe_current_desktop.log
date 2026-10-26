@@ -1,0 +1,424 @@
+# Phase 8.1 probe label=current_desktop start=2026-10-25T13:35:11+05:30 user=mahim uid=1000
+
+$ uname -srm; hostname
+Linux 6.17.0-19-generic aarch64
+Ubuntu
+[rc=0]
+
+$ nproc; lscpu | grep -E 'Model name|^CPU\(s\)|Thread|Core|Socket|Vendor|Hypervisor|Virtualization'
+5
+CPU(s):                                  5
+Vendor ID:                               Apple
+Model name:                              -
+Thread(s) per core:                      1
+Core(s) per cluster:                     5
+Socket(s):                               -
+[rc=0]
+
+$ cat /proc/loadavg; uptime
+1.07 1.34 1.71 5/1326 131662
+ 13:35:11 up 12:14,  1 user,  load average: 1.07, 1.34, 1.71
+[rc=0]
+
+$ cat /proc/pressure/cpu
+some avg10=3.94 avg60=2.65 avg300=3.30 total=976464804
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+[rc=0]
+
+$ echo XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-unset} DISPLAY=${DISPLAY:-unset} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset} XDG_SESSION_ID=${XDG_SESSION_ID:-unset} SSH_CONNECTION=${SSH_CONNECTION:-unset} SSH_TTY=${SSH_TTY:-unset}; tty
+XDG_SESSION_TYPE=wayland DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 XDG_SESSION_ID=unset SSH_CONNECTION=unset SSH_TTY=unset
+not a tty
+[rc=1]
+
+$ loginctl list-sessions --no-pager
+SESSION  UID USER  SEAT  LEADER CLASS   TTY  IDLE SINCE
+      2 1000 mahim seat0 2593   user    tty2 no   -
+      3 1000 mahim -     2706   manager -    no   -
+
+2 sessions listed.
+[rc=0]
+
+$ for s in $(loginctl list-sessions --no-legend | awk '{print $1}'); do echo "-- session $s"; loginctl show-session $s -p Id -p User -p Type -p Class -p State -p Remote -p Service -p TTY -p Display -p Active --no-pager; done
+-- session 2
+Id=2
+User=1000
+TTY=tty2
+Display=
+Remote=no
+Service=gdm-password
+Type=wayland
+Class=user
+Active=yes
+State=active
+-- session 3
+Id=3
+User=1000
+TTY=
+Display=
+Remote=no
+Service=systemd-user
+Type=unspecified
+Class=manager
+Active=yes
+State=active
+[rc=0]
+
+$ who -a
+[rc=0]
+
+$ systemctl get-default; systemctl list-units --type=target --state=active --no-pager
+graphical.target
+  UNIT                    LOAD   ACTIVE SUB    DESCRIPTION
+  basic.target            loaded active active Basic System
+  boot-complete.target    loaded active active Boot Completion Check
+  cryptsetup.target       loaded active active Local Encrypted Volumes
+  getty-pre.target        loaded active active Preparation for Logins
+  getty.target            loaded active active Login Prompts
+  graphical.target        loaded active active Graphical Interface
+  integritysetup.target   loaded active active Local Integrity Protected Volumes
+  local-fs-pre.target     loaded active active Preparation for Local File Systems
+  local-fs.target         loaded active active Local File Systems
+  multi-user.target       loaded active active Multi-User System
+  network-online.target   loaded active active Network is Online
+  network-pre.target      loaded active active Preparation for Network
+  network.target          loaded active active Network
+  nss-lookup.target       loaded active active Host and Network Name Lookups
+  nss-user-lookup.target  loaded active active User and Group Name Lookups
+  paths.target            loaded active active Path Units
+  remote-fs.target        loaded active active Remote File Systems
+  slices.target           loaded active active Slice Units
+  snapd.mounts-pre.target loaded active active Mounting snaps
+  snapd.mounts.target     loaded active active Mounted snaps
+  sockets.target          loaded active active Socket Units
+  sound.target            loaded active active Sound Card
+  swap.target             loaded active active Swaps
+  sysinit.target          loaded active active System Initialization
+  time-set.target         loaded active active System Time Set
+  timers.target           loaded active active Timer Units
+  veritysetup.target      loaded active active Local Verity Protected Volumes
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+27 loaded units listed.
+[rc=0]
+
+$ systemctl list-units --type=service --state=running --no-pager
+  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+  accounts-daemon.service       loaded active running Accounts Service
+  avahi-daemon.service          loaded active running Avahi mDNS/DNS-SD Stack
+  brltty.service                loaded active running Braille Device Support
+  chrony.service                loaded active running chrony, an NTP client/server
+  colord.service                loaded active running Manage, Install and Generate Color Profiles
+  cron.service                  loaded active running Regular background program processing daemon
+  cups-browsed.service          loaded active running Make remote CUPS printers available locally
+  cups.service                  loaded active running CUPS Scheduler
+  dbus.service                  loaded active running D-Bus System Message Bus
+  fwupd.service                 loaded active running Firmware update daemon
+  gdm.service                   loaded active running GNOME Display Manager
+  ModemManager.service          loaded active running Modem Manager
+  networkd-dispatcher.service   loaded active running Dispatcher daemon for systemd-networkd
+  NetworkManager.service        loaded active running Network Manager
+  polkit.service                loaded active running Authorization Manager
+  power-profiles-daemon.service loaded active running Power Profiles daemon
+  rsyslog.service               loaded active running System Logging Service
+  rtkit-daemon.service          loaded active running RealtimeKit Scheduling Policy Service
+  snapd.service                 loaded active running Snap Daemon
+  switcheroo-control.service    loaded active running Switcheroo Control Proxy service
+  systemd-journald.service      loaded active running Journal Service
+  systemd-logind.service        loaded active running User Login Management
+  systemd-oomd.service          loaded active running Userspace Out-Of-Memory (OOM) Killer
+  systemd-resolved.service      loaded active running Network Name Resolution
+  systemd-udevd.service         loaded active running Rule-based Manager for Device Events and Files
+  udisks2.service               loaded active running Disk Manager
+  unattended-upgrades.service   loaded active running Unattended Upgrades Shutdown
+  upower.service                loaded active running Daemon for power management
+  user@1000.service             loaded active running User Manager for UID 1000
+  vboxadd-service.service       loaded active running vboxadd-service.service
+  wpa_supplicant.service        loaded active running WPA supplicant
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+31 loaded units listed.
+[rc=0]
+
+$ systemctl --user list-units --type=service --state=running --no-pager
+  UNIT                                                             LOAD   ACTIVE SUB     DESCRIPTION
+  at-spi-dbus-bus.service                                          loaded active running Accessibility services bus
+  dbus.service                                                     loaded active running D-Bus User Message Bus
+  dconf.service                                                    loaded active running User preferences database
+  evolution-addressbook-factory.service                            loaded active running Evolution address book service
+  evolution-calendar-factory.service                               loaded active running Evolution calendar service
+  evolution-source-registry.service                                loaded active running Evolution source registry
+  filter-chain.service                                             loaded active running PipeWire filter chain daemon
+  gcr-ssh-agent.service                                            loaded active running GCR ssh-agent wrapper
+  gnome-keyring-daemon.service                                     loaded active running GNOME Keyring daemon
+  gnome-session-manager@ubuntu.service                             loaded active running GNOME Session Manager (session: ubuntu)
+  gnome-session-monitor.service                                    loaded active running Monitor Session leader for GNOME Session
+  gvfs-afc-volume-monitor.service                                  loaded active running Virtual filesystem service - Apple File Conduit monitor
+  gvfs-daemon.service                                              loaded active running Virtual filesystem service
+  gvfs-goa-volume-monitor.service                                  loaded active running Virtual filesystem service - GNOME Online Accounts monitor
+  gvfs-gphoto2-volume-monitor.service                              loaded active running Virtual filesystem service - digital camera monitor
+  gvfs-metadata.service                                            loaded active running Virtual filesystem metadata service
+  gvfs-mtp-volume-monitor.service                                  loaded active running Virtual filesystem service - Media Transfer Protocol monitor
+  gvfs-udisks2-volume-monitor.service                              loaded active running Virtual filesystem service - disk device monitor
+  localsearch-3.service                                            loaded active running Tracker file system data miner
+  mpris-proxy.service                                              loaded active running Bluetooth mpris proxy
+  org.freedesktop.IBus.session.GNOME.service                       loaded active running IBus Daemon for GNOME
+  org.gnome.SettingsDaemon.A11ySettings.service                    loaded active running GNOME accessibility service
+  org.gnome.SettingsDaemon.Color.service                           loaded active running GNOME color management service
+  org.gnome.SettingsDaemon.Datetime.service                        loaded active running GNOME date & time service
+  org.gnome.SettingsDaemon.Housekeeping.service                    loaded active running GNOME maintenance of expirable data service
+  org.gnome.SettingsDaemon.Keyboard.service                        loaded active running GNOME keyboard configuration service
+  org.gnome.SettingsDaemon.MediaKeys.service                       loaded active running GNOME keyboard shortcuts service
+  org.gnome.SettingsDaemon.Power.service                           loaded active running GNOME power management service
+  org.gnome.SettingsDaemon.PrintNotifications.service              loaded active running GNOME printer notifications service
+  org.gnome.SettingsDaemon.Rfkill.service                          loaded active running GNOME RFKill support service
+  org.gnome.SettingsDaemon.ScreensaverProxy.service                loaded active running GNOME FreeDesktop screensaver service
+  org.gnome.SettingsDaemon.Sharing.service                         loaded active running GNOME file sharing service
+  org.gnome.SettingsDaemon.Smartcard.service                       loaded active running GNOME smartcard service
+  org.gnome.SettingsDaemon.Sound.service                           loaded active running GNOME sound sample caching service
+  org.gnome.SettingsDaemon.UsbProtection.service                   loaded active running GNOME USB protection service
+  org.gnome.SettingsDaemon.Wwan.service                            loaded active running GNOME WWan support service
+  org.gnome.SettingsDaemon.XSettings.service                       loaded active running GNOME XSettings service
+  org.gnome.Shell@wayland.service                                  loaded active running GNOME Shell on Wayland
+  pipewire-pulse.service                                           loaded active running PipeWire PulseAudio
+  pipewire.service                                                 loaded active running PipeWire Multimedia Service
+  snap.snapd-desktop-integration.snapd-desktop-integration.service loaded active running Service for snap application snapd-desktop-integration.snapd-desktop-integration
+  speech-dispatcher.service                                        loaded active running Common interface to speech synthesizers
+  ssh-agent.service                                                loaded active running OpenSSH Agent
+  wireplumber.service                                              loaded active running Multimedia Service Session Manager
+  xdg-desktop-portal-gnome.service                                 loaded active running Portal service (GNOME implementation)
+  xdg-desktop-portal-gtk.service                                   loaded active running Portal service (GTK/GNOME implementation)
+  xdg-desktop-portal.service                                       loaded active running Portal service
+  xdg-document-portal.service                                      loaded active running flatpak document portal service
+  xdg-permission-store.service                                     loaded active running sandboxed app permission store
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+49 loaded units listed.
+[rc=0]
+
+$ top -b -n 1 -o %CPU -w 200 | head -30
+top - 13:35:11 up 12:14,  1 user,  load average: 1.07, 1.34, 1.71
+Tasks: 286 total,   3 running, 276 sleeping,   0 stopped,   7 zombie
+%Cpu(s): 16.4 us, 16.4 sy,  0.0 ni, 65.5 id,  0.0 wa,  0.0 hi,  1.8 si,  0.0 st 
+MiB Mem :   5302.7 total,    168.0 free,   3490.2 used,   1569.0 buff/cache     
+MiB Swap:   4096.0 total,    300.8 free,   3795.2 used.   1812.5 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+   2967 mahim     20   0 6131192 221724  84468 R  90.9   4.1 140:53.09 gnome-shell
+   3909 mahim     20   0   52.7g 141924 133636 S  27.3   2.6  14:55.81 claude-desktop
+ 121062 root      20   0       0      0      0 I  27.3   0.0   0:57.75 kworker/u20:3-events_unbound
+   4054 mahim     20   0 1455.3g 680596 136556 S  18.2  12.5  24:19.72 claude-desktop
+ 131678 mahim     20   0   13196   4920   2920 R   9.1   0.1   0:00.01 top
+      1 root      20   0   26184  10504   6392 S   0.0   0.2   0:19.57 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.03 kthreadd
+      3 root      20   0       0      0      0 S   0.0   0.0   0:00.00 pool_workqueue_release
+      4 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-rcu_gp
+      5 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-sync_wq
+      6 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-kvfree_rcu_reclaim
+      7 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-slub_flushwq
+      8 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-netns
+     10 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/0:0H-kblockd
+     13 root       0 -20       0      0      0 I   0.0   0.0   0:00.00 kworker/R-mm_percpu_wq
+     14 root      20   0       0      0      0 S   0.0   0.0   0:02.03 ksoftirqd/0
+     15 root      20   0       0      0      0 I   0.0   0.0   0:33.08 rcu_preempt
+     16 root      20   0       0      0      0 S   0.0   0.0   0:00.00 rcu_exp_par_gp_kthread_worker/0
+     17 root      20   0       0      0      0 S   0.0   0.0   0:00.20 rcu_exp_gp_kthread_worker
+     18 root      rt   0       0      0      0 S   0.0   0.0   0:00.40 migration/0
+     19 root     -51   0       0      0      0 S   0.0   0.0   0:00.00 idle_inject/0
+     20 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/0
+     21 root      20   0       0      0      0 S   0.0   0.0   0:00.00 cpuhp/1
+[rc=0]
+
+$ ps -eo pid,ppid,pcpu,pmem,etime,time,psr,stat,comm --sort=-pcpu | head -25
+    PID    PPID %CPU %MEM     ELAPSED     TIME PSR STAT COMMAND
+   2967    2706 19.1  4.0    12:14:04 02:20:53   4 RLsl gnome-shell
+   6834    2967  6.2  5.2    12:04:21 00:45:25   0 Sl   firefox
+   7414    7013  5.0  4.5    12:04:15 00:36:45   1 Sl   Isolated Web Co
+   7829    7013  4.8 21.7    12:04:12 00:34:45   0 Sl   Isolated Web Co
+   4054    3864  3.3 12.5    12:13:44 00:24:19   1 Sl   claude-desktop
+ 121062       2  3.2  0.0       29:22 00:00:57   1 I    kworker/u20:3-events_unbound
+ 120015  120014  2.6  5.1       37:07 00:00:59   0 Sl   claude
+ 119160       2  2.1  0.0       53:02 00:01:08   0 I    kworker/u20:2-writeback
+   3909    3861  2.0  2.6    12:13:52 00:14:55   0 Sl   claude-desktop
+ 120225       2  1.8  0.0       34:41 00:00:39   2 I    kworker/u20:0-events_power_efficient
+   4450    4449  1.2  1.9    12:13:24 00:09:30   0 Sl   claude
+ 130902       2  1.1  0.0       08:08 00:00:05   1 I    kworker/u20:4-events_power_efficient
+   3857    2967  1.1  3.3    12:13:54 00:08:07   0 RLl  claude-desktop
+   7634    7013  0.4  0.8    12:04:13 00:02:59   4 Sl   Isolated Servic
+   2763    2706  0.2  0.0    12:14:04 00:02:11   2 S<sl pipewire
+  10157    7013  0.1  1.5    11:51:45 00:01:22   0 Sl   Isolated Web Co
+  31617    7013  0.1  0.8    08:41:50 00:00:49   3 Sl   Isolated Web Co
+   7043    7013  0.1  1.5    12:04:17 00:00:56   1 Sl   Privileged Cont
+     55       2  0.1  0.0    12:14:21 00:00:46   4 S    kcompactd0
+   3915    3857  0.0  0.7    12:13:52 00:00:38   2 Sl   claude-desktop
+  38843    7013  0.0  0.3    07:42:10 00:00:21   2 Sl   Web Content
+     74       2  0.0  0.0    12:14:21 00:00:33   4 S    kswapd0
+     15       2  0.0  0.0    12:14:21 00:00:33   4 I    rcu_preempt
+ 121403    7013  0.0  0.4       27:51 00:00:01   4 Sl   Web Content
+[rc=0]
+
+$ ps -eo pid,ppid,pcpu,etime,time,psr,comm --sort=-time | head -20
+    PID    PPID %CPU     ELAPSED     TIME PSR COMMAND
+   2967    2706 19.1    12:14:04 02:20:53   3 gnome-shell
+   6834    2967  6.2    12:04:21 00:45:25   0 firefox
+   7414    7013  5.0    12:04:15 00:36:45   1 Isolated Web Co
+   7829    7013  4.8    12:04:12 00:34:45   0 Isolated Web Co
+   4054    3864  3.3    12:13:44 00:24:19   1 claude-desktop
+   3909    3861  2.0    12:13:52 00:14:55   4 claude-desktop
+   4450    4449  1.2    12:13:24 00:09:30   0 claude
+   3857    2967  1.1    12:13:54 00:08:07   1 claude-desktop
+   7634    7013  0.4    12:04:13 00:02:59   4 Isolated Servic
+   2763    2706  0.2    12:14:04 00:02:11   2 pipewire
+  10157    7013  0.1    11:51:45 00:01:22   0 Isolated Web Co
+ 119160       2  2.1       53:02 00:01:08   0 kworker/u20:2-writeback
+ 120015  120014  2.6       37:07 00:00:59   0 claude
+ 121062       2  3.2       29:22 00:00:57   4 kworker/u20:3+events_unbound
+   7043    7013  0.1    12:04:17 00:00:56   1 Privileged Cont
+  31617    7013  0.1    08:41:50 00:00:49   3 Isolated Web Co
+     55       2  0.1    12:14:21 00:00:46   4 kcompactd0
+ 120225       2  1.8       34:41 00:00:39   2 kworker/u20:0-events_power_efficient
+   3915    3857  0.0    12:13:52 00:00:38   2 claude-desktop
+[rc=0]
+
+$ ps -eo pid,pcpu,rss,comm,args --sort=-rss | head -15 | cut -c1-200
+    PID %CPU   RSS COMMAND         COMMAND
+   7829  4.8 1182656 Isolated Web Co /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:42301 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 2026021402
+   4054  3.3 680596 claude-desktop /usr/lib/claude-desktop/claude-desktop --type=renderer --crashpad-handler-pid=3882 --enable-crash-reporter=534120e7-01be-4901-91f0-8698117d95b6,no_channel --user-dat
+   6834  6.2 285020 firefox        /snap/firefox/7832/usr/lib/firefox/firefox
+ 120015  2.6 280416 claude         /home/mahim/.config/Claude/claude-code/2.1.299/c9c8b11eb1d5/claude --output-format stream-json --verbose --input-format stream-json --effort=high --model=claude-sonn
+   7414  5.0 249692 Isolated Web Co /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:42073 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 20260214022
+   2967 19.1 221724 gnome-shell    /usr/bin/gnome-shell
+   3857  1.1 181216 claude-desktop /usr/lib/claude-desktop/claude-desktop
+   3909  2.0 141924 claude-desktop /usr/lib/claude-desktop/claude-desktop --type=gpu-process --ozone-platform=wayland --crashpad-handler-pid=3882 --enable-crash-reporter=534120e7-01be-4901-91f0-869811
+   4450  1.2 104852 claude         /home/mahim/.config/Claude/claude-code/2.1.299/c9c8b11eb1d5/claude --output-format stream-json --verbose --input-format stream-json --effort=high --model=claude-sonn
+   7043  0.1 84144 Privileged Cont /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:35276 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 202602140227
+  10157  0.1 81724 Isolated Web Co /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:42408 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 202602140227
+   4268  0.0 48344 claude-desktop  /usr/lib/claude-desktop/claude-desktop --type=utility --utility-sub-type=node.mojom.NodeService --lang=en-US --service-sandbox-type=none --crashpad-handler-pid=3882 
+  31617  0.1 47400 Isolated Web Co /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:42447 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 202602140227
+   7634  0.4 45268 Isolated Servic /snap/firefox/7832/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:42301 -prefMapHandle 1:276454 -jsInitHandle 2:223968 -parentBuildID 202602140227
+[rc=0]
+
+$ ps -eo pid,comm | grep -Ei 'gnome|Xorg|Xwayland|gdm|lightdm|sddm|kwin|plasma|mutter|tracker|snapd|packagekit|unattended|apport|whoopsie|cups|avahi|modemmanager|NetworkManager|claude|chrome|firefox|electron|code' | head -40
+   1266 snapd
+   1378 NetworkManager
+   1771 unattended-upgr
+   1811 gdm3
+   2593 gdm-session-wor
+   2767 snapd-desktop-i
+   2770 gnome-keyring-d
+   2825 gdm-wayland-ses
+   2834 gnome-session-i
+   2930 gnome-session-c
+   2953 gnome-session-s
+   2967 gnome-shell
+   3088 gnome-shell-cal
+   3112 Xwayland
+   3324 snapd-desktop-i
+   3604 mutter-x11-fram
+   3857 claude-desktop
+   3861 claude-desktop
+   3862 claude-desktop
+   3864 claude-desktop
+   3882 chrome_crashpad
+   3909 claude-desktop
+   3915 claude-desktop
+   4031 claude-desktop
+   4054 claude-desktop
+   4268 claude-desktop
+   4292 claude-desktop
+   4420 claude-desktop
+   4450 claude
+   4474 claude-desktop
+   6834 firefox
+  32566 claude-desktop
+  42737 avahi-daemon
+  42738 avahi-daemon
+  60945 ModemManager
+ 119624 cupsd
+ 119626 cups-browsed
+ 120015 claude
+[rc=0]
+
+$ ls -d /sys/devices/system/cpu/cpu0/cpufreq /sys/devices/system/cpu/cpufreq 2>&1; cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>&1; cat /sys/devices/system/cpu/cpuidle/current_governor 2>&1
+ls: cannot access '/sys/devices/system/cpu/cpu0/cpufreq': No such file or directory
+/sys/devices/system/cpu/cpufreq
+cat: /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor: No such file or directory (os error 2)
+menu
+[rc=0]
+
+$ cat /sys/devices/system/cpu/online /sys/devices/system/cpu/isolated /sys/devices/system/cpu/nohz_full 2>&1; cat /proc/cmdline
+0-4
+
+(null)
+BOOT_IMAGE=/boot/vmlinuz-6.17.0-19-generic root=UUID=f066bb5a-5c63-4f37-924f-3adfcb05b768 ro quiet splash console=tty0 crashkernel=2G-4G:320M,4G-32G:512M,32G-64G:1024M,64G-128G:2048M,128G-:4096M vt.handoff=7
+[rc=0]
+
+$ cat /sys/kernel/mm/transparent_hugepage/enabled 2>&1; cat /proc/sys/kernel/numa_balancing 2>&1; cat /proc/sys/kernel/sched_autogroup_enabled 2>&1
+always [madvise] never
+0
+1
+[rc=0]
+
+$ systemctl list-timers --no-pager | head -15
+NEXT                            LEFT LAST                              PASSED UNIT                           ACTIVATES
+Sun 2026-10-25 13:40:00 IST 4min 47s Sun 2026-10-25 13:30:12 IST 4min 59s ago sysstat-collect.timer          sysstat-collect.service
+Sun 2026-10-25 13:53:11 IST    17min Sun 2026-10-25 12:54:20 IST    40min ago fwupd-refresh.timer            fwupd-refresh.service
+Sun 2026-10-25 14:33:25 IST    58min Sun 2026-10-25 13:34:16 IST      55s ago anacron.timer                  anacron.service
+Mon 2026-10-26 00:00:00 IST      10h Sun 2026-10-25 12:54:20 IST    40min ago dpkg-db-backup.timer           dpkg-db-backup.service
+Mon 2026-10-26 00:00:00 IST      10h Sun 2026-10-25 12:54:20 IST    40min ago sysstat-rotate.timer           sysstat-rotate.service
+Mon 2026-10-26 00:07:00 IST      10h Sun 2026-10-25 12:54:20 IST    40min ago sysstat-summary.timer          sysstat-summary.service
+Mon 2026-10-26 00:48:57 IST      11h Sun 2026-10-25 12:54:20 IST    40min ago logrotate.timer                logrotate.service
+Mon 2026-10-26 01:25:58 IST      11h Sun 2026-10-18 23:44:58 IST      12h ago update-notifier-download.timer update-notifier-download.service
+Mon 2026-10-26 01:35:51 IST      12h Sun 2026-10-18 23:54:50 IST      11h ago systemd-tmpfiles-clean.timer   systemd-tmpfiles-clean.service
+Mon 2026-10-26 01:38:32 IST      12h Mon 2026-10-19 00:10:26 IST      11h ago fstrim.timer                   fstrim.service
+Mon 2026-10-26 01:52:46 IST      12h Sun 2026-10-25 12:54:20 IST    40min ago apt-daily.timer                apt-daily.service
+Mon 2026-10-26 02:30:29 IST      12h Sun 2026-10-25 12:54:20 IST    40min ago man-db.timer                   man-db.service
+Mon 2026-10-26 06:25:34 IST      16h Sun 2026-10-25 12:54:20 IST    40min ago apt-daily-upgrade.timer        apt-daily-upgrade.service
+Mon 2026-10-26 08:58:09 IST      19h Sun 2026-10-25 12:54:20 IST    40min ago motd-news.timer                motd-news.service
+[rc=0]
+
+$ cat /proc/interrupts | awk 'NR==1 || /timer|IPI|virtio|eth|enp/' | head -20
+           CPU0       CPU1       CPU2       CPU3       CPU4       
+ 10:   12044135   12194493   12118698   11832537   22739060    GICv3  27 Level     arch_timer
+ 13:    2008003          0          0          0          0    GICv3  37 Level     virtio0
+ 18:     466417          0          0          0          0    GICv3  34 Level     vmwgfx, enp0s8
+IPI0:    312100     362377     638286    3861218     360726       Rescheduling interrupts
+IPI1:  16688753   14200191   21948741   21745975   12215855       Function call interrupts
+IPI2:         0          0          0          0          0       CPU stop interrupts
+IPI3:         0          0          0          0          0       CPU stop NMIs
+IPI4:         0          0          0          0          0       Timer broadcast interrupts
+IPI5:        16        122         24         42        212       IRQ work interrupts
+IPI6:         0          0          0          0          0       CPU backtrace interrupts
+IPI7:         0          0          0          0          0       KGDB roundup interrupts
+[rc=0]
+
+$ vmstat 1 6
+procs -----------memory---------- ---swap-- -----io---- -system-- -------cpu-------
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st gu
+ 2  0 3886172 169292  16280 1590304  164  234   801   608 3762   11  7  4 89  0  0  0
+ 0  1 3886024 168964  16280 1590384  216    0   220     0 6453 8523 16 15 69  0  0  0
+ 8  0 3885636 176856  16280 1590004  456    0   456     0 6145 8358 12 12 76  0  0  0
+ 5  0 3885632 185196  16280 1586480   16    0    16  1764 6092 7997 14 13 73  0  0  0
+ 1  0 3885632 180504  16280 1586480    0    0     0     0 5938 7845 14 13 73  0  0  0
+ 1  0 3885632 184908  16288 1585120    0    0     0   120 6853 9246 17 16 67  0  0  0
+[rc=0]
+
+$ python3 -I scripts/p8_1_cpu_window.py 10
+window 10.002 s, CLK_TCK 100
+cpu   busy 1.4837 CPU-s/s
+cpu0  busy 0.3059 CPU-s/s
+cpu1  busy 0.2959 CPU-s/s
+cpu2  busy 0.2999 CPU-s/s
+cpu3  busy 0.2959 CPU-s/s
+cpu4  busy 0.2879 CPU-s/s
+canary cores {0,1}: 0.6019 CPU-s/s; core {0}: 0.3059 CPU-s/s
+[rc=0]
+# end=2026-10-25T13:35:27+05:30
