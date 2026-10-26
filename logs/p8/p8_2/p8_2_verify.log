@@ -1,0 +1,49 @@
+### 1. pre-declared files and hashes
+PASS: design file equals the last logged sha256
+PASS: first logged design hash differs from the amended one (amendment A1 logged before the run)
+PASS: design hash log is older than the run context (hash logged before the run)
+PASS: plan file equals the logged sha256
+PASS: plan has 40 rows (40)
+### 2. harness parity with scripts/bench.sh
+PASS: identical in both scripts: A) echo "build/baseline_sniffer $VA" ;;
+PASS: identical in both scripts: B) echo "build/loader -d $VA build/phase3_kern.o" ;;
+PASS: identical in both scripts: C) echo "build/loader $VA build/phase3_kern.o" ;;
+PASS: identical in both scripts: CPU_SYS=0; CPU_NOISE_CLI=1; CPU_CAP=2; CPU_SRV=3; CPU_MATCH_CLI=4
+PASS: identical in both scripts: VA=p1veth0; IPA=10.0.0.1; IPB=10.0.0.2; NS=p2ns
+PASS: identical in both scripts: taskset -c "$CPU_SYS" build/classifier "$VA" > "$tmp/cls.log" 2>&1 &
+PASS: identical in both scripts: taskset -c "$cpu" iperf3 -c "$IPB" -B "$IPA" -p "$p" -u -b "$bw" -l "$payload" -t "$dur" -
+PASS: identical in both scripts: ip netns exec "$NS" taskset -c "$CPU_SRV" iperf3 -s -B "$IPB" -p "$p" -J --logfile "$tmp/s
+PASS: identical in both scripts: vmstat 1 $((dur + 2)) > "$tmp/vmstat.log" 2>&1 &
+PASS: identical in both scripts: FLOOD_SIZE=256
+PASS: capture commands, pinning, classifier, iperf3 and vmstat lines identical to bench.sh
+PASS: saved diff equals diff -u bench.sh p8_2_bench.sh now
+PASS: p8_2_bench.sh syntax
+### 3. statistics unit check
+PASS df=1 table 12.706 computed 12.7062
+PASS df=5 table 2.571 computed 2.5706
+PASS df=10 table 2.228 computed 2.2281
+PASS df=30 table 2.042 computed 2.0423
+PASS df=1e6 -> 1.95997 (normal 1.95996)
+selftest: 0 FAIL
+PASS: t quantile matches the table of summarize.py (df 1..30) and the normal limit
+### 4. run evidence complete
+PASS: logs/p8/p8_2/run_context.txt exists
+PASS: logs/p8/p8_2/p8_2_run_console.log exists
+PASS: run console log ends with FINISHED
+PASS: pre-flight passed before the plan started
+PASS: 40 plan rows have a complete final log (profiled rows also a counts file)
+PASS: 3 pre-flight windows (3)
+PASS: plan rows and pre-flight windows complete
+PASS: perf data hashes logged
+### 5. summary recomputed from the logs (outputs deleted first, checked after)
+PASS: p8_2_summary.py (log logs/p8/p8_2/p8_2_summary.out)
+PASS: summary files created by this run
+PASS: summary identical to the previous computation (deterministic)
+**S-H1 does not hold.**
+**S-H2 is not evaluable (A: missing profile or offered data; B: missing profile or offered data).**
+**INCONCLUSIVE** (A: 0 valid unprofiled (need 5), 3 valid profiled (need 3); B: 0 valid unprofiled (need 5), 4 valid profiled (need 3)).
+### 6. nothing from earlier phases modified
+PASS: only Phase 8.2 files, CODE_NOTES.md and DEVIATIONS.md changed: none
+PASS: bench.sh, summarize.py, Phase 6 docs, logs/p6c and tracked results unchanged
+
+p8_2_verify: 0 FAIL
