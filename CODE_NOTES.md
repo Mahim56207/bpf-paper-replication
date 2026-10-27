@@ -165,3 +165,18 @@ Environment: aarch64 VM, kernel 6.17.0-19-generic, `perf version 6.17.13` (`logs
 | `perf report --stdio --no-children --sort comm,dso,symbol -i <file>` | `perf report -h` in the probe log: `--stdio`, `--no-children`, `-s, --sort` | informational top-of-profile listing |
 | permissions | `perf_event_paranoid = 4`, `kptr_restrict = 1`, `/proc/kallsyms` addresses read as 0 for the non-root user (probe log) | perf runs as root (the run scripts are launched with sudo); non-root `perf record` fails with "Access to performance monitoring and observability operations is limited" (probe log) |
 | kernel symbol `packet_rcv` | not in any installed header (kernel source is not installed here); it appears in the short paper's call graphs (`~/bpf-paper-short/data/perf/*/perf_report.txt`, read-only) | the AF_PACKET tap handler to look for in stacks. **UNVERIFIED on this machine until the Phase 8.2 probe lists the AF_PACKET handler symbols found in stacks; whether a ring-buffer variant (`tpacket_rcv`) occurs is likewise UNVERIFIED** |
+
+## Phase 8.4: V8 validation (scripts/p8_4_*, docs/phase8_4_design.md)
+No libbpf function and no BPF helper is added: the captures and the classifier are the existing binaries. Tools used and where their options were found (`logs/p8/p8_4/p8_4_tool_probe.log`, `stress-ng, version 0.19.03` on this aarch64 VM):
+
+| item | where it was found | use |
+|---|---|---|
+| `stress-ng --cpu N` / `-c N` ("start N workers that perform CPU only loading"), `-l P, --cpu-load P` | `stress-ng --help` in the probe log | pure CPU noise (`--cpu-load` is not used: the duty cycle is made by SIGSTOP/SIGCONT so that the cache stressor can use the same mechanism) |
+| `stress-ng --cache N` / `-C N` ("start N CPU cache thrashing workers"), `--cache-no-affinity` ("do not change CPU affinity") | same | cache/memory pressure noise; without `--cache-no-affinity` the stressor changes its own CPU affinity and would leave the pinned core |
+| `stress-ng --vm N`, `--vm-bytes N`, `--vm-hang N` ("sleep N seconds before freeing memory"), `--vm-keep` | same | global memory pressure holding a fixed number of bytes (S3); `--vm-keep` is not used (it redirties memory continuously) |
+| `-t N, --timeout T` | same ("defaulting to a 1 day run per stressor" without it) | an explicit long timeout; the workers are killed by the controller |
+| `taskset -c <cpus>` | existing use in `scripts/bench.sh` | pinning of the controller and of every worker |
+| SIGSTOP, SIGCONT, SIGKILL via Python `os.kill`/`os.killpg`, `os.sched_getaffinity` | Python standard library (no C header used) | duty cycling and the affinity check |
+| `/proc/meminfo` `MemAvailable`, `SwapTotal`, `SwapFree` | read in Phase 8.1/8.2 | memory gate and the S3 holding size |
+| `stress-ng --cache-enable-all` | message printed by `stress-ng --cache 1` in `logs/p8/p8_4/p8_4_controller_functional_test.log` ("use --cache-enable-all to enable all cache flags for heavier cache stressing"); amendment A1 of the Phase 8.4 design | the cache noise uses it |
+| `/proc/<pid>/stat` fields 14 (utime) and 15 (stime), in clock ticks | `proc(5)`; read as in `scripts/summarize.py` (`CLK_TCK`) | CPU time consumed by a stress-ng worker (injected rate, design amendment A2) |
