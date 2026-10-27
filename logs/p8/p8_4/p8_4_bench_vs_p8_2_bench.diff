@@ -1,0 +1,78 @@
+--- scripts/p8_2_bench.sh	2026-10-26 14:41:04.028252049 +0530
++++ scripts/p8_4_bench.sh	2026-10-26 15:20:39.105984841 +0530
+@@ -1,10 +1,12 @@
+ #!/usr/bin/env bash
+-# p8_2_bench.sh - Phase 8.2 copy of scripts/bench.sh (Phase 6 harness, frozen). Changes, all listed in logs/p8/p8_2/p8_2_bench_vs_bench.diff:
++# p8_4_bench.sh - Phase 8.4 copy of scripts/p8_2_bench.sh (itself a copy of scripts/bench.sh; see logs/p8/p8_4/p8_4_bench_vs_p8_2_bench.diff) (Phase 6 harness, frozen). Changes, all listed in logs/p8/p8_2/p8_2_bench_vs_bench.diff:
+ #   - config N (no capture process, no eBPF capture filter; classifier tap, iperf3 servers and clients as in the other configs)
+ #   - PROFILE=1: perf record -e cpu-clock -F 997 -g -a -C <sender cores> during the traffic window (docs/phase8_2_design.md section 4)
+ #   - outputs go to logs/p8/p8_2/ (P8_OUT_DIR), perf data to build/p8_2/perf/ (untracked)
+ #   - the plan/topology/calibrate/run subcommands are removed (they write tracked files under results/); only `one` and `idle` remain
+-# Design, definitions and pre-declared rules: docs/phase6_design.md, docs/phase6_addenda.md, docs/phase8_2_design.md.
++# Phase 8.4 change: P8_NOISE_SPEC="kind:cores:duty[:vm_mb]" starts scripts/p8_4_noise.py (stress-ng noise, duty-cycled, pinned) before the instrumentation and stops it after the closing snapshot;
++# the P8_OUT_DIR default is logs/p8/p8_4.
++# Design, definitions and pre-declared rules: docs/phase8_4_design.md, docs/phase6_design.md, docs/phase6_addenda.md, docs/phase8_2_design.md.
+ #
+ # Subcommands
+ #   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> $P8_OUT_DIR/<label>_<cfg>_<traffic>_<size>_<rep>.log   (root, generates traffic)
+@@ -35,8 +37,8 @@
+ VA=p1veth0; IPA=10.0.0.1; IPB=10.0.0.2; NS=p2ns
+ CAL_LADDER=(1000 2000 4000 8000 16000 32000 64000)
+ 
+-P8_OUT_DIR="${P8_OUT_DIR:-logs/p8/p8_2}"
+-P8_PERF_DIR="${P8_PERF_DIR:-build/p8_2/perf}"
++P8_OUT_DIR="${P8_OUT_DIR:-logs/p8/p8_4}"
++P8_PERF_DIR="${P8_PERF_DIR:-build/p8_4/perf}"
+ mkdir -p "$P8_OUT_DIR" "$P8_PERF_DIR"
+ 
+ ############################################################ helpers for runs
+@@ -100,7 +102,7 @@
+     local rate=$((pps * payload * 8))
+     : > "$OUT"
+     lab_check
+-    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer|classifier)" 2>/dev/null
++    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer|classifier)" 2>/dev/null; pkill -KILL -f "p8_4_noise.py|stress-ng" 2>/dev/null
+     rm -f /sys/fs/bpf/repl_p3   # a stale pinned Phase 3 program would make `bpftool map ... name p3_counters` ambiguous
+ 
+     case "$traffic" in
+@@ -116,7 +118,7 @@
+         echo "# bench label=$label session=$session attempt=$attempt cfg=$cfg traffic=$traffic size=$size rep=$rep pps_target=$pps dur=$dur payload=$payload"
+         echo "# clk_tck=$(getconf CLK_TCK) kernel=$(uname -r) start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+         echo "# pinning cap=$CPU_CAP srv=$CPU_SRV cli_match=$CPU_MATCH_CLI cli_noise=$CPU_NOISE_CLI"
+-        echo "# capture_cmd=$(cap_cmd "$cfg") profile=${PROFILE:-0}"
++        echo "# capture_cmd=$(cap_cmd "$cfg") profile=${PROFILE:-0} noise=${P8_NOISE_SPEC:-none}"
+     } >> "$OUT"
+ 
+     # servers (one-shot, JSON log)
+@@ -146,6 +148,15 @@
+         bpftool -j map dump name p3_counters > "$tmp/map_before.json" 2>&1
+     }
+ 
++    # Phase 8.4: noise (stress-ng, duty-cycled, pinned), started before the instrumentation and stopped after the closing snapshot
++    noise_pid=""
++    if [[ -n "${P8_NOISE_SPEC:-}" ]]; then
++        IFS=: read -r nz_kind nz_cores nz_duty nz_mb <<< "$P8_NOISE_SPEC"
++        taskset -c "$nz_cores" python3 -I scripts/p8_4_noise.py "$nz_kind" "$nz_cores" "$nz_duty" ${nz_mb:+--vm-mb "$nz_mb"} > "$tmp/noise.log" 2>&1 &
++        noise_pid=$!
++        wait_for 30 grep -q '^NOISE_READY' "$tmp/noise.log" || { echo "FATAL: noise did not become ready: $(tail -3 "$tmp/noise.log")" >> "$OUT"; echo "FATAL: noise did not become ready (see $OUT)" >&2; kill -TERM "$noise_pid" 2>/dev/null; return 1; }
++        sleep 1
++    fi
+     # instrumentation: pidstat / vmstat start 1 s before traffic and run dur+2 s
+     pidstat -p "$meas_pid" 1 $((dur + 2)) > "$tmp/pidstat.log" 2>&1 &
+     pidstat -w -p "$meas_pid" 1 $((dur + 2)) > "$tmp/pidstat_w.log" 2>&1 &
+@@ -176,6 +187,7 @@
+     stat_snapshot "$meas_pid" "$tmp/stat_after"
+     [[ "$cfg" != A && "$cfg" != N ]] && bpftool -j map dump name p3_counters > "$tmp/map_after.json" 2>&1
+     if [[ "${PROFILE:-0}" == 1 ]]; then wait "$perf_pid"; echo "perf_exit $?" >> "$tmp/perf_record.log"; [[ -s "$perf_data" ]] || echo "FATAL: perf data $perf_data missing" >> "$OUT"; fi
++    if [[ -n "$noise_pid" ]]; then kill -TERM "$noise_pid" 2>/dev/null; wait "$noise_pid" 2>/dev/null; fi
+     sleep 2   # let the last instrumentation samples land
+ 
+     # stop capture (TERM; not AppArmor-confined), then collect
+@@ -192,6 +204,7 @@
+     section stat_after "$tmp/stat_after"
+     [[ "$cfg" != A && "$cfg" != N ]] && { section map_before "$tmp/map_before.json"; section map_after "$tmp/map_after.json"; }
+     [[ "${PROFILE:-0}" == 1 ]] && section perf_record "$tmp/perf_record.log"
++    [[ -n "${P8_NOISE_SPEC:-}" ]] && section noise "$tmp/noise.log"
+     section client_exit "$tmp/cli_exit"
+     for p in $ports; do
+         section "client_json_$p" "$tmp/cli_$p.json"

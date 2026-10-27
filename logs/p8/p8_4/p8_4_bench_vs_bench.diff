@@ -1,0 +1,353 @@
+--- scripts/bench.sh	2026-10-19 00:09:25.120676244 +0530
++++ scripts/p8_4_bench.sh	2026-10-26 15:20:39.105984841 +0530
+@@ -1,17 +1,20 @@
+ #!/usr/bin/env bash
+-# bench.sh - Phase 6 measurement harness. Design, definitions and pre-declared rules: docs/phase6_design.md.
++# p8_4_bench.sh - Phase 8.4 copy of scripts/p8_2_bench.sh (itself a copy of scripts/bench.sh; see logs/p8/p8_4/p8_4_bench_vs_p8_2_bench.diff) (Phase 6 harness, frozen). Changes, all listed in logs/p8/p8_2/p8_2_bench_vs_bench.diff:
++#   - config N (no capture process, no eBPF capture filter; classifier tap, iperf3 servers and clients as in the other configs)
++#   - PROFILE=1: perf record -e cpu-clock -F 997 -g -a -C <sender cores> during the traffic window (docs/phase8_2_design.md section 4)
++#   - outputs go to logs/p8/p8_2/ (P8_OUT_DIR), perf data to build/p8_2/perf/ (untracked)
++#   - the plan/topology/calibrate/run subcommands are removed (they write tracked files under results/); only `one` and `idle` remain
++# Phase 8.4 change: P8_NOISE_SPEC="kind:cores:duty[:vm_mb]" starts scripts/p8_4_noise.py (stress-ng noise, duty-cycled, pinned) before the instrumentation and stops it after the closing snapshot;
++# the P8_OUT_DIR default is logs/p8/p8_4.
++# Design, definitions and pre-declared rules: docs/phase8_4_design.md, docs/phase6_design.md, docs/phase6_addenda.md, docs/phase8_2_design.md.
+ #
+ # Subcommands
+-#   plan [seed]                  write results/bench_plan.tsv, print matrix size and wall-clock estimate   (no traffic, no root)
+-#   topology                     write results/topology.md                                                (no traffic, no root)
+-#   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> logs/bench_<cfg>_<traffic>_<size>_<rep>.log   (root, generates traffic)
+-#                                BENCH_LABEL=smoke -> logs/smoke_*.log (smoke runs: excluded from analysis)
+-#   idle [DUR]                   3 idle windows (harness attached, no traffic): idle baseline and canary_max (A2)   (root)
+-#   calibrate                    find config A's loss-free ceiling -> results/calibration.json            (root, generates traffic)
+-#   run [plan]                   execute the plan: warm-ups first (discarded), then the blocks in order   (root, generates traffic)
++#   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> $P8_OUT_DIR/<label>_<cfg>_<traffic>_<size>_<rep>.log   (root, generates traffic)
++#                                BENCH_LABEL sets the label (default bench), PROFILE=1 adds the perf profile
++#   idle [DUR]                   3 idle windows (harness attached, no traffic)   (root)
+ #
+ # Configs   A baseline_sniffer | B loader -d, port-4040 filter | C loader (no drain), port-4040 filter
+-#           D loader -d, reject_all | E loader -d, accept_all
++#           D loader -d, reject_all | E loader -d, accept_all | N no capture process (Phase 8.2)
+ # Traffic   nm = UDP to a non-matching port (5050) | m = UDP to port 4040 | flood = two unlimited UDP streams
+ #           (4040 match + 5050 noise) | warmup = like m at size 512 | cal = calibration ladder
+ # Size      L2 frame bytes without FCS; UDP payload = size - 42 (14 Ethernet + 20 IP + 8 UDP)
+@@ -34,122 +37,14 @@
+ VA=p1veth0; IPA=10.0.0.1; IPB=10.0.0.2; NS=p2ns
+ CAL_LADDER=(1000 2000 4000 8000 16000 32000 64000)
+ 
+-mkdir -p results logs
+-
+-############################################################ plan
+-cmd_plan() {
+-    local seed="${1:-${BENCH_SEED:-}}"
+-    [[ -n "$seed" ]] || seed="$(date +%s)"
+-    python3 -I - "$seed" "$DUR" "$OVERHEAD_EST" "$R_CURVE" "$R_FLOOD" "$FLOOD_SIZE" "$CAL_DUR" "${#CAL_LADDER[@]}" "${SIZES[*]}" <<'EOF'
+-import random, sys
+-seed, dur, overhead, r_curve, r_flood, flood_size, cal_dur, cal_steps = (int(x) for x in sys.argv[1:9])
+-sizes = [int(x) for x in sys.argv[9].split()]
+-rng = random.Random(seed)
+-points = []  # (cfg, traffic, size, rep)
+-for rep in range(1, r_curve + 1):
+-    for size in sizes:
+-        for cfg in "ABD":
+-            points.append(("curve_reject", cfg, "nm", size, rep))
+-        for cfg in "ABE":
+-            points.append(("curve_accept", cfg, "m", size, rep))
+-for rep in range(1, r_flood + 1):
+-    for cfg in "ABC":
+-        points.append(("flood", cfg, "flood", flood_size, rep))
+-rows = [("warmup", "warmup", cfg, "warmup", 512, 0) for cfg in "ABCDE"]
+-for rep in range(1, max(r_curve, r_flood) + 1):
+-    block = [p for p in points if p[4] == rep]
+-    rng.shuffle(block)  # run order randomised within each rep block
+-    rows += [("run",) + p for p in block]
+-with open("results/bench_plan.tsv", "w") as f:
+-    f.write("# seed=%d dur=%d\n# seq\tphase\tclass\tcfg\ttraffic\tsize\trep\n" % (seed, dur))
+-    for i, r in enumerate(rows, 1):
+-        f.write("%d\t%s\t%s\t%s\t%s\t%d\t%d\n" % ((i,) + r))
+-counts = {}
+-for r in rows:
+-    counts[r[1]] = counts.get(r[1], 0) + 1
+-n = len(rows)
+-print("seed=%d  plan written to results/bench_plan.tsv" % seed)
+-print("runs: %d total = %d warm-up (discarded) + %d measured" % (n, counts.get("warmup", 0), n - counts.get("warmup", 0)))
+-for k in ("curve_reject", "curve_accept", "flood"):
+-    print("  %-13s %3d runs" % (k, counts.get(k, 0)))
+-est = n * (dur + overhead)
+-print("wall-clock estimate for 'run': %d runs x (%d s traffic + %d s ASSUMED overhead) = %d s = %.1f min"
+-      % (n, dur, overhead, est, est / 60.0))
+-cal_runs = 2 * cal_steps  # sizes 64 and 1500
+-print("calibration (separate, 'calibrate'): %d runs x (%d s + %d s ASSUMED overhead) = %d s = %.1f min"
+-      % (cal_runs, cal_dur, overhead, cal_runs * (cal_dur + overhead), cal_runs * (cal_dur + overhead) / 60.0))
+-EOF
+-}
+-
+-############################################################ topology
+-cmd_topology() {
+-    {
+-        echo "# Topology and controls (recorded by scripts/bench.sh topology)"
+-        echo
+-        echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ). Every value below is the output of the command shown."
+-        echo
+-        echo "## Host"
+-        echo '```'
+-        echo "\$ uname -srm";           uname -srm
+-        echo "\$ nproc";                nproc
+-        echo "\$ getconf CLK_TCK";      getconf CLK_TCK
+-        echo "\$ cat /proc/sys/net/core/bpf_jit_enable"; cat /proc/sys/net/core/bpf_jit_enable
+-        echo "\$ lscpu | grep -E 'Model name|Architecture|Thread|Core|Socket|CPU\\(s\\)'"; lscpu 2>&1 | grep -E 'Model name|Architecture|Thread|Core|Socket|^CPU\(s\)'
+-        echo '```'
+-        echo
+-        echo "ENV.md records the machine as arm64 (aarch64), not x86; nothing in the harness assumes x86."
+-        echo
+-        echo "## CPU frequency governor"
+-        echo '```'
+-        echo "\$ cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+-        cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>&1 | sort | uniq -c
+-        echo '```'
+-        echo
+-        echo "## Interface offloads (ethtool -k $VA)"
+-        echo '```'
+-        echo "\$ ethtool -k $VA"; ethtool -k "$VA" 2>&1
+-        echo '```'
+-        echo
+-        echo "## Link"
+-        echo '```'
+-        echo "\$ ip -d link show $VA"; ip -d link show "$VA" 2>&1
+-        echo '```'
+-        echo
+-        echo "## /proc/net/packet columns (the contract names a Drops column)"
+-        echo '```'
+-        echo "\$ head -1 /proc/net/packet"; head -1 /proc/net/packet
+-        echo '```'
+-        echo "If the header above has no Drops column, per-socket drops come from PACKET_STATISTICS instead: the"
+-        echo "sniffer prints \`FINAL_KERNEL kernel_drops=\` and the loader \`FINAL_SOCKET kernel_drops=\`."
+-        echo
+-        echo "## Tools"
+-        echo '```'
+-        for t in "iperf3 --version" "pidstat -V" "vmstat -V" "mpstat -V" "taskset --version" "bpftool version"; do
+-            echo "\$ $t"; $t 2>&1 | head -2
+-        done
+-        echo '```'
+-        echo
+-        echo "## Pinning plan (nproc=5)"
+-        echo
+-        echo "| core | use |"
+-        echo "|---|---|"
+-        echo "| $CPU_SYS | left free: system, bench.sh, pidstat, vmstat |"
+-        echo "| $CPU_NOISE_CLI | iperf3 client for the noise stream (flood runs only) |"
+-        echo "| $CPU_CAP | capture process: baseline_sniffer (A) or loader (B-E) |"
+-        echo "| $CPU_SRV | iperf3 server(s), inside namespace $NS |"
+-        echo "| $CPU_MATCH_CLI | iperf3 client for the main stream (curve runs and the matching flood stream) |"
+-        echo
+-        echo "The capture process, the iperf3 server and the iperf3 client are never on the same core. Note: for a veth"
+-        echo "pair the receive path (and therefore the in-kernel filter) normally runs in softirq context on the sending"
+-        echo "core, i.e. core $CPU_MATCH_CLI, not on core $CPU_CAP; the harness therefore also records per-CPU busy time from /proc/stat."
+-    } > results/topology.md
+-    echo "wrote results/topology.md ($(wc -l < results/topology.md) lines)"
+-}
++P8_OUT_DIR="${P8_OUT_DIR:-logs/p8/p8_4}"
++P8_PERF_DIR="${P8_PERF_DIR:-build/p8_4/perf}"
++mkdir -p "$P8_OUT_DIR" "$P8_PERF_DIR"
+ 
+ ############################################################ helpers for runs
+ need_root() { [[ $EUID -eq 0 ]] || { echo "FATAL: this subcommand needs sudo" >&2; exit 1; }; }
+ # Files written as root must stay owned by the invoking user, so later non-root summarize runs can rewrite them.
+-fix_owner() { [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER": results logs 2>/dev/null; return 0; }
++fix_owner() { [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER": "$P8_OUT_DIR" 2>/dev/null; return 0; }   # not the perf directory: perf refuses data files owned by another user, even as root
+ 
+ section() { # section <name> <file>  (appends "### name" + file to the run log)
+     { echo "### $1"; cat "$2" 2>/dev/null; echo; } >> "$OUT"
+@@ -168,6 +63,7 @@
+         C) echo "build/loader $VA build/phase3_kern.o" ;;
+         D) echo "build/loader -d -p reject_all $VA build/phase6_filters.o" ;;
+         E) echo "build/loader -d -p accept_all $VA build/phase6_filters.o" ;;
++        N) echo "none" ;;   # Phase 8.2: no capture process
+         *) return 1 ;;
+     esac
+ }
+@@ -178,6 +74,12 @@
+         grep -E '^(cpu[0-9]* |ctxt )' /proc/stat
+         echo "pid_stat $(cat /proc/"$1"/stat 2>/dev/null)"
+         grep -E '^(voluntary|nonvoluntary)_ctxt_switches' /proc/"$1"/status 2>/dev/null
++        # Phase 8.2 amendment A2 item 5 (informational; scripts/summarize.py parse_stat ignores these lines):
++        # pressure stall info and, for every task with non-zero ticks, "task <pid> <comm> <utime+stime ticks> <last cpu>"
++        for _f in cpu memory io; do echo "psi_$_f $(head -1 /proc/pressure/$_f)"; done
++        awk '{ s=$0; i=index(s,"("); j=0; for (k=length(s); k>0; k--) if (substr(s,k,1)==")") { j=k; break }
++               pid=substr(s,1,i-2); comm=substr(s,i+1,j-i-1); gsub(/ /,"_",comm); n=split(substr(s,j+2),f," ")
++               if (n >= 37 && f[12]+f[13] > 0) printf "task %s %s %d %d\n", pid, comm, f[12]+f[13], f[37] }' /proc/[0-9]*/stat 2>> "${OUT%.log}.snap_err"
+     } > "$2"
+ }
+ 
+@@ -194,13 +96,13 @@
+     # BENCH_LABEL=smoke writes logs/smoke_*.log (excluded from analysis by pre-declaration); default label: bench
+     local label="${BENCH_LABEL:-bench}" session="${BENCH_SESSION:-nosession}" attempt="${BENCH_ATTEMPT:-1}"
+     local name="${label}_${cfg}_${traffic}_${size}_${rep}"
+-    OUT="logs/$name.log"
++    OUT="$P8_OUT_DIR/$name.log"
+     local tmp; tmp="$(mktemp -d)"
+     local payload=$((size - 42)) ports="" cap_pid="" cls_pid="" srv_pids="" cli_pids=""
+     local rate=$((pps * payload * 8))
+     : > "$OUT"
+     lab_check
+-    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer|classifier)" 2>/dev/null
++    pkill -KILL -f "iperf3 -s -B $IPB" 2>/dev/null; pkill -KILL -f "build/(loader|baseline_sniffer|classifier)" 2>/dev/null; pkill -KILL -f "p8_4_noise.py|stress-ng" 2>/dev/null
+     rm -f /sys/fs/bpf/repl_p3   # a stale pinned Phase 3 program would make `bpftool map ... name p3_counters` ambiguous
+ 
+     case "$traffic" in
+@@ -216,7 +118,7 @@
+         echo "# bench label=$label session=$session attempt=$attempt cfg=$cfg traffic=$traffic size=$size rep=$rep pps_target=$pps dur=$dur payload=$payload"
+         echo "# clk_tck=$(getconf CLK_TCK) kernel=$(uname -r) start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+         echo "# pinning cap=$CPU_CAP srv=$CPU_SRV cli_match=$CPU_MATCH_CLI cli_noise=$CPU_NOISE_CLI"
+-        echo "# capture_cmd=$(cap_cmd "$cfg")"
++        echo "# capture_cmd=$(cap_cmd "$cfg") profile=${PROFILE:-0} noise=${P8_NOISE_SPEC:-none}"
+     } >> "$OUT"
+ 
+     # servers (one-shot, JSON log)
+@@ -233,21 +135,34 @@
+ 
+     # capture process
+     # shellcheck disable=SC2046
+-    taskset -c "$CPU_CAP" $(cap_cmd "$cfg") > "$tmp/cap.log" 2>&1 &
+-    cap_pid=$!
+-    wait_for 10 grep -q '^START' "$tmp/cap.log" || echo "WARN: capture did not print START" >> "$OUT"
+-    [[ "$cfg" != A ]] && {
++    if [[ "$cfg" == N ]]; then
++        : > "$tmp/cap.log"; cap_pid=""; meas_pid="$cls_pid"   # config N: nothing is captured; pidstat/stat_snapshot follow the classifier
++    else
++        taskset -c "$CPU_CAP" $(cap_cmd "$cfg") > "$tmp/cap.log" 2>&1 &
++        cap_pid=$!; meas_pid="$cap_pid"
++        wait_for 10 grep -q '^START' "$tmp/cap.log" || echo "WARN: capture did not print START" >> "$OUT"
++    fi
++    [[ "$cfg" != A && "$cfg" != N ]] && {
+         n=$(bpftool map show 2>/dev/null | grep -c ' p3_counters ')
+         [[ "$n" == 1 ]] || echo "WARN: $n maps named p3_counters (expected 1): run is ambiguous" >> "$OUT"
+         bpftool -j map dump name p3_counters > "$tmp/map_before.json" 2>&1
+     }
+ 
++    # Phase 8.4: noise (stress-ng, duty-cycled, pinned), started before the instrumentation and stopped after the closing snapshot
++    noise_pid=""
++    if [[ -n "${P8_NOISE_SPEC:-}" ]]; then
++        IFS=: read -r nz_kind nz_cores nz_duty nz_mb <<< "$P8_NOISE_SPEC"
++        taskset -c "$nz_cores" python3 -I scripts/p8_4_noise.py "$nz_kind" "$nz_cores" "$nz_duty" ${nz_mb:+--vm-mb "$nz_mb"} > "$tmp/noise.log" 2>&1 &
++        noise_pid=$!
++        wait_for 30 grep -q '^NOISE_READY' "$tmp/noise.log" || { echo "FATAL: noise did not become ready: $(tail -3 "$tmp/noise.log")" >> "$OUT"; echo "FATAL: noise did not become ready (see $OUT)" >&2; kill -TERM "$noise_pid" 2>/dev/null; return 1; }
++        sleep 1
++    fi
+     # instrumentation: pidstat / vmstat start 1 s before traffic and run dur+2 s
+-    pidstat -p "$cap_pid" 1 $((dur + 2)) > "$tmp/pidstat.log" 2>&1 &
+-    pidstat -w -p "$cap_pid" 1 $((dur + 2)) > "$tmp/pidstat_w.log" 2>&1 &
++    pidstat -p "$meas_pid" 1 $((dur + 2)) > "$tmp/pidstat.log" 2>&1 &
++    pidstat -w -p "$meas_pid" 1 $((dur + 2)) > "$tmp/pidstat_w.log" 2>&1 &
+     vmstat 1 $((dur + 2)) > "$tmp/vmstat.log" 2>&1 &
+     sleep 1
+-    stat_snapshot "$cap_pid" "$tmp/stat_before"
++    stat_snapshot "$meas_pid" "$tmp/stat_before"
+ 
+     # traffic
+     local k=0
+@@ -259,14 +174,24 @@
+         cli_pids="$cli_pids $!"
+         k=$((k + 1))
+     done
++    if [[ "${PROFILE:-0}" == 1 ]]; then   # Phase 8.2: start the profile when the first iperf3 client process exists (poll 20 ms)
++        for _i in $(seq 1 100); do pgrep -f "iperf3 -c $IPB -B $IPA" > /dev/null && break; sleep 0.02; done
++        perf_data="$P8_PERF_DIR/${name}_a${attempt}.data"; rm -f "$perf_data"
++        echo "# perf_data=$perf_data perf_cmd=perf record -e cpu-clock -F 997 -g -a -C $CPU_NOISE_CLI,$CPU_MATCH_CLI -- sleep $dur (pinned to core $CPU_SYS)" >> "$OUT"
++        taskset -c "$CPU_SYS" perf record -e cpu-clock -F 997 -g -a -C "$CPU_NOISE_CLI,$CPU_MATCH_CLI" -o "$perf_data" -- sleep "$dur" > "$tmp/perf_record.log" 2>&1 &
++        perf_pid=$!
++    fi
+     for c in $cli_pids; do wait "$c"; echo "client_exit $?" >> "$tmp/cli_exit"; done
++    # (A2 item 6: the wait for perf record moves behind the closing stat snapshot below, so its data flush does not lengthen the window)
+     [[ "$traffic" == idle ]] && sleep "$dur"
+-    stat_snapshot "$cap_pid" "$tmp/stat_after"
+-    [[ "$cfg" != A ]] && bpftool -j map dump name p3_counters > "$tmp/map_after.json" 2>&1
++    stat_snapshot "$meas_pid" "$tmp/stat_after"
++    [[ "$cfg" != A && "$cfg" != N ]] && bpftool -j map dump name p3_counters > "$tmp/map_after.json" 2>&1
++    if [[ "${PROFILE:-0}" == 1 ]]; then wait "$perf_pid"; echo "perf_exit $?" >> "$tmp/perf_record.log"; [[ -s "$perf_data" ]] || echo "FATAL: perf data $perf_data missing" >> "$OUT"; fi
++    if [[ -n "$noise_pid" ]]; then kill -TERM "$noise_pid" 2>/dev/null; wait "$noise_pid" 2>/dev/null; fi
+     sleep 2   # let the last instrumentation samples land
+ 
+     # stop capture (TERM; not AppArmor-confined), then collect
+-    kill -TERM "$cap_pid" 2>/dev/null; wait "$cap_pid" 2>/dev/null
++    [[ -n "$cap_pid" ]] && { kill -TERM "$cap_pid" 2>/dev/null; wait "$cap_pid" 2>/dev/null; }
+     kill -TERM "$cls_pid" 2>/dev/null; wait "$cls_pid" 2>/dev/null
+     for s in $srv_pids; do kill -TERM "$s" 2>/dev/null; wait "$s" 2>/dev/null; done
+ 
+@@ -277,7 +202,9 @@
+     section vmstat "$tmp/vmstat.log"
+     section stat_before "$tmp/stat_before"
+     section stat_after "$tmp/stat_after"
+-    [[ "$cfg" != A ]] && { section map_before "$tmp/map_before.json"; section map_after "$tmp/map_after.json"; }
++    [[ "$cfg" != A && "$cfg" != N ]] && { section map_before "$tmp/map_before.json"; section map_after "$tmp/map_after.json"; }
++    [[ "${PROFILE:-0}" == 1 ]] && section perf_record "$tmp/perf_record.log"
++    [[ -n "${P8_NOISE_SPEC:-}" ]] && section noise "$tmp/noise.log"
+     section client_exit "$tmp/cli_exit"
+     for p in $ports; do
+         section "client_json_$p" "$tmp/cli_$p.json"
+@@ -299,65 +226,9 @@
+     for k in 1 2 3; do cmd_one D idle 0 "$k" 0 "$dur"; done
+ }
+ 
+-############################################################ calibrate
+-cmd_calibrate() {
+-    need_root
+-    fix_owner
+-    export BENCH_SESSION="cal_$(date +%s)"
+-    local size pps k
+-    for size in 64 1500; do
+-        for pps in "${CAL_LADDER[@]}"; do
+-            cmd_one A cal "$size" "$pps" "$pps" "$CAL_DUR"
+-        done
+-    done
+-    # V5'c envelope at the matrix duration (10 s) and the idle/canary baseline windows (D6.6 release conditions b, d)
+-    for k in 1 2 3; do cmd_one A env 512 "$k" 1000 "$DUR"; done
+-    cmd_idle "$DUR"
+-    python3 -I scripts/summarize.py baseline
+-    python3 -I scripts/summarize.py calibrate
+-    fix_owner
+-}
+-
+-############################################################ run
+-cmd_run() {
+-    need_root
+-    fix_owner
+-    local plan="${1:-results/bench_plan.tsv}"
+-    [[ -f "$plan" ]] || { echo "FATAL: no plan; run 'bench.sh plan' first" >&2; exit 1; }
+-    [[ -f results/calibration.json ]] || { echo "FATAL: results/calibration.json missing; run 'bench.sh calibrate' first" >&2; exit 1; }
+-    [[ -f results/baseline_calibration.json ]] || { echo "FATAL: results/baseline_calibration.json missing (canary_max); run 'bench.sh calibrate' first" >&2; exit 1; }
+-    export BENCH_SESSION="run_$(date +%s)"
+-    local p_curve; p_curve="$(python3 -I -c 'import json;print(json.load(open("results/calibration.json"))["p_curve"])')"
+-    echo "curve pps = $p_curve (from results/calibration.json); plan = $plan; session = $BENCH_SESSION"
+-    echo "--- session idle windows (M1): 3 x ${DUR} s, harness attached, no traffic"
+-    cmd_idle "$DUR" < /dev/null
+-    mkdir -p logs/attempts
+-    grep -v '^#' "$plan" | while IFS=$'\t' read -r seq phase cls cfg traffic size rep; do
+-        echo "[$seq] $phase $cls cfg=$cfg traffic=$traffic size=$size rep=$rep"
+-        local pps="$p_curve"; [[ "$traffic" == flood ]] && pps=0
+-        local attempt=1 name="bench_${cfg}_${traffic}_${size}_${rep}" rc
+-        while :; do
+-            BENCH_ATTEMPT="$attempt" cmd_one "$cfg" "$traffic" "$size" "$rep" "$pps" < /dev/null
+-            [[ "$phase" == warmup ]] && break
+-            python3 -I scripts/summarize.py canary "logs/$name.log"; rc=$?
+-            [[ $rc -ne 1 ]] && break                  # 0 clean, 2 not evaluable: keep the run
+-            if (( attempt >= 3 )); then echo "V8: cell $name still contaminated after 2 re-runs (kept; it will be INCONCLUSIVE)"; break; fi
+-            mv "logs/$name.log" "logs/attempts/${name}_a${attempt}.log"
+-            echo "V8: attempt $attempt of $name contaminated; re-running"
+-            attempt=$((attempt + 1))
+-        done
+-    done
+-    python3 -I scripts/summarize.py
+-    fix_owner
+-}
+-
+ ############################################################ main
+ case "${1:-}" in
+-    plan) shift; cmd_plan "$@" ;;
+-    topology) cmd_topology ;;
+     one) shift; cmd_one "$@" ;;
+-    calibrate) cmd_calibrate ;;
+     idle) shift; cmd_idle "$@" ;;
+-    run) shift; cmd_run "$@" ;;
+-    *) sed -n '2,15p' "${BASH_SOURCE[0]}"; exit 2 ;;
++    *) sed -n '2,16p' "${BASH_SOURCE[0]}"; exit 2 ;;
+ esac
