@@ -48,8 +48,15 @@ sudo bash scripts/phase1_setup.sh
 - [x] Phase 3: eBPF kernel filter
 - [x] Phase 4: loader and map reader
 - [x] Phase 5: verifier stress test
-- [x] Phase 6: benchmark (6a design and harness, calibration, matrix); sub-phase 6c (claim C1 instruction counts, two user-space interpreters) run afterwards in a separate x86_64 container (DEVIATIONS D6c.1): verdict in `results/c1_verdict.md`, design in `docs/phase6c_design.md`; REPORT.md predates it and has not been regenerated
+- [x] Phase 6: benchmark (6a design and harness, calibration, matrix)
+- [x] Phase 6c: claim C1 instruction counts (two user-space interpreters), first run in an x86_64 container (DEVIATIONS D6c.1), verdict in `results/c1_verdict.md`, design in `docs/phase6c_design.md`
 - [x] Phase 7: final report (`REPORT.md`), figures, historical comparison
+- [x] Phase 8.0: C1 repeated on the aarch64 VM with amendment A3 (evaluator-only instruction counts), outputs in `logs/p8/a3/`
+- [x] Phase 8.1: quiet measurement setup (`results/p8_1_findings.md`)
+- [x] Phase 8.2: sender-bottleneck test with a no-capture control (`results/p8_2_findings.md`)
+- [ ] Phase 8.3: not run (planned repeat for C2 and C3, which stay MIXED and INCONCLUSIVE)
+- [x] Phase 8.4: validation of the V8 noise rule (`results/p8_4_findings.md`)
+- [x] Phase 8.7: `REPORT.md`, `README.md` and `results/comparison.md` brought up to date (`scripts/build_report.py`, `scripts/p8_7_verify.sh`)
 
 Final results and verdicts: **[REPORT.md](REPORT.md)**; rule text and amendments: `docs/phase6_design.md`, `docs/phase6_addenda.md`, `DEVIATIONS.md`.
 
