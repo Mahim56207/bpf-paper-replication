@@ -1,0 +1,33 @@
+$ diff verdicts
+9,10c9,10
+< - C1b (R(F1) < R(F2) < R(F3) < R(F4), primary): **fails** (R = 1.58, 3.19, 3.04, 20.6).
+< - C1c (largest R within a factor of two of the paper's 18.1, i.e. in [9.05, 36.2]): **holds** (largest R = 20.6).
+---
+> - C1b (R(F1) < R(F2) < R(F3) < R(F4), primary): **holds** (R = 1.32, 2.62, 2.68, 16).
+> - C1c (largest R within a factor of two of the paper's 18.1, i.e. in [9.05, 36.2]): **holds** (largest R = 16).
+(rc=1)
+
+$ annotate: where does main get Ir in sm run
+sort: write failed: 'standard output': Broken pipe
+
+$ objdump: symbols of evaluators
+00000000000016f0 T c1_eval_bpf
+0000000000001aec T c1_eval_sm
+58
+
+$ grep toggle in c1_run.py
+9:m2    : callgrind runs (toggle-collect on the evaluator), 10 chunks of 1000 frames per mix, filter and
+153:    r = run(["valgrind", "--tool=callgrind", "--toggle-collect=" + fn, "--callgrind-out-file=" + str(out),
+$ compile flags
+#!/usr/bin/env bash
+# c1_build.sh - build the Phase 6c tools into build/p6c/ (not tracked). Usage: bash scripts/c1_build.sh 2>&1 | tee logs/p6c/p6c_build.log
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+mkdir -p build/p6c
+CF="-O2 -g -Wall -Wextra -std=gnu11 -Isrc"
+echo "\$ gcc $CF -o build/p6c/c1_oracle src/c1_oracle.c -lpcap"
+gcc $CF -o build/p6c/c1_oracle src/c1_oracle.c -lpcap
+echo "\$ gcc $CF -DC1_COUNT -o build/p6c/c1_interp_count src/c1_interp.c"
+gcc $CF -DC1_COUNT -o build/p6c/c1_interp_count src/c1_interp.c
+echo "\$ gcc $CF -o build/p6c/c1_interp_ir src/c1_interp.c"
+gcc $CF -o build/p6c/c1_interp_ir src/c1_interp.c

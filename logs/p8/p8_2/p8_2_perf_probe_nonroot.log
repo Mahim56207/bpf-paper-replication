@@ -1,0 +1,133 @@
+# Phase 8.2 perf probe (non-root) 2026-10-26T13:57:01+05:30
+
+$ perf --version
+perf version 6.17.13
+[rc=0]
+
+$ cat /proc/sys/kernel/perf_event_paranoid
+4
+[rc=0]
+
+$ cat /proc/sys/kernel/kptr_restrict
+1
+[rc=0]
+
+$ ls /sys/bus/event_source/devices/
+breakpoint
+kprobe
+software
+tracepoint
+uprobe
+[rc=0]
+
+$ perf list sw 2>&1 | head -30
+
+software:
+  alignment-faults
+       [Number of kernel handled memory alignment faults. Unit: software]
+  bpf-output
+       [An event used by BPF programs to write to the perf ring buffer. Unit:
+        software]
+  cgroup-switches
+       [Number of context switches to a task in a different cgroup. Unit:
+        software]
+  context-switches
+       [Number of context switches [This event is an alias of cs]. Unit:
+        software]
+  cpu-clock
+       [Per-CPU high-resolution timer based event. Unit: software]
+  cpu-migrations
+       [Number of times a process has migrated to a new CPU [This event is an
+        alias of migrations]. Unit: software]
+  cs
+       [Number of context switches [This event is an alias of
+        context-switches]. Unit: software]
+  dummy
+       [A placeholder event that doesn't count anything. Unit: software]
+  emulation-faults
+       [Number of kernel handled unimplemented instruction faults handled
+        through emulation. Unit: software]
+  faults
+       [Number of page faults [This event is an alias of page-faults]. Unit:
+        software]
+  major-faults
+[rc=0]
+
+$ perf list hw 2>&1 | head -12
+[rc=0]
+
+$ perf list cache 2>&1 | head -4
+[rc=0]
+
+$ perf record -e cpu-clock -a -C 1 -o /tmp/claude-1000/p82_test.data -- sleep 1 2>&1 | head -5
+Missing support for build id in kernel mmap events.
+Disable this warning with --no-buildid-mmap
+Error:
+Access to performance monitoring and observability operations is limited.
+Consider adjusting /proc/sys/kernel/perf_event_paranoid setting to open
+[rc=0]
+
+$ perf record -h 2>&1 | grep -E -- '(-a, |-C, |-g|-F, |-e, |-o, |--call-graph|-N,|--no-buildid)'
+    -a, --all-cpus        system-wide collection from all CPUs
+    -B, --no-buildid      do not collect buildids in perf.data
+    -C, --cpu <cpu>       list of cpus to monitor
+    -e, --event <event>   event selector. use 'perf list' to list available events
+    -F, --freq <freq or 'max'>
+    -g                    enables call-graph recording
+    -N, --no-buildid-cache
+    -o, --output <file>   output file name
+        --call-graph <record_mode[,record_size]>
+                          setup and enables call-graph (stack chain/backtrace):
+[rc=0]
+
+$ perf script -h 2>&1 | grep -E -- '(-F, |-i, |--no-inline|--show-)' | head
+    -F, --fields <str>    comma separated output fields prepend with 'type:'. +field to add and -field to remove.Valid types: hw,sw,trace,raw,synth. Fields: comm,tid,pid,time,cpu,event,trace,ip,sym,dso,dsoff,addr,symoff,srcline,period,iregs,uregs,brstack,brstacksym,flags,data_src,weight,bpf-output,brstackinsn,brstackinsnlen,brstackdisasm,brstackoff,callindent,insn,disasm,insnlen,synth,phys_addr,metric,misc,srccode,ipc,tod,data_page_size,code_page_size,ins_lat,machine_pid,vcpu,cgroup,retire_lat,brcntr
+    -i, --input <file>    input file name
+    -I, --show-info       display extended information from perf.data file
+        --show-bpf-events
+        --show-cgroup-events
+        --show-kernel-path
+        --show-lost-events
+        --show-mmap-events
+        --show-namespace-events
+        --show-on-off-events
+[rc=0]
+
+$ perf report -h 2>&1 | grep -E -- '(--stdio|--no-children|--sort|-g, |--comm|--cpu)' | head -12
+    -c, --comms <comm[,comm...]>
+    -C, --cpu <cpu>       list of cpus to profile
+    -g, --call-graph <print_type,threshold[,print_limit],order,sort_key[,branch],value>
+    -p, --parent <regex>  regex filter to identify parent, see: '--sort parent'
+    -s, --sort <key[,key2...]>
+        --children        Accumulate callchains of children and show total overhead as well. Enabled by default, use --no-children to disable.
+        --stdio           Use the stdio interface
+        --stdio-color <mode>
+                          'always' (default), 'never' or 'auto' only applicable to --stdio mode
+[rc=0]
+
+$ dpkg -l | grep -E 'linux-tools|linux-perf|^ii  perf' | head
+ii  linux-perf                                    6.17.0-41.41                               arm64        Performance analysis tools for Linux
+ii  linux-tools-6.17.0-19                         6.17.0-19.19                               arm64        Linux kernel version specific tools for version 6.17.0-19
+ii  linux-tools-6.17.0-19-generic                 6.17.0-19.19                               arm64        Linux kernel version specific tools for version 6.17.0-19
+ii  linux-tools-6.17.0-41                         6.17.0-41.41                               arm64        Linux kernel version specific tools for version 6.17.0-41
+ii  linux-tools-6.17.0-41-generic                 6.17.0-41.41                               arm64        Linux kernel version specific tools for version 6.17.0-41
+ii  linux-tools-common                            6.17.0-41.41                               all          Linux kernel version specific tools for version 6.17.0
+[rc=0]
+
+$ head -3 /proc/kallsyms
+0000000000000000 T _text
+0000000000000000 t __pi__text
+0000000000000000 T _stext
+[rc=0]
+
+$ stress-ng --version
+stress-ng, version 0.19.03 (gcc 15.1.0, aarch64 Linux 6.17.0-19-generic)
+[rc=0]
+
+$ which perf mpstat pidstat iperf3 taskset
+/usr/bin/perf
+/usr/bin/mpstat
+/usr/bin/pidstat
+/usr/bin/iperf3
+/usr/bin/taskset
+[rc=0]

@@ -1,0 +1,157 @@
+# D8.3 experiments 2026-10-25T13:12:25+05:30
+$ valgrind --version -> valgrind-3.25.1
+$ gcc --version -> gcc (Ubuntu 15.2.0-4ubuntu4) 15.2.0
+$ clang --version -> Ubuntu clang version 20.1.8 (0ubuntu4)
+$ uname -srm -> Linux 6.17.0-19-generic aarch64
+objdump check: are c1_eval_* separate non-inlined functions in the gcc build?
+2 c1_eval symbols; 00000000000016f0 T c1_eval_bpf | 0000000000001aec T c1_eval_sm
+$ clang -O2 -g -Wall -Wextra -std=gnu11 -Isrc -o /home/mahim/bpf-repl/build/p8/c1_interp_ir_clang src/c1_interp.c  -> rc=0 
+$ gcc -O0 ... -o /home/mahim/bpf-repl/build/p8/c1_interp_ir_gccO0  -> rc=0
+
+=== variant gcc15-O2 (as in c1_build.sh) | F1 bpf-opt | evaluator c1_eval_bpf
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+0     0          0                      0                   0       -           0
+1     2162       2162                   2162                0       0.00        0
+2     2291       2291                   2362                -71     -35.50      -71
+10    2917       2917                   23270               -20353  -2035.30    -20353
+100   10400      10400                  626650              -616250 -6162.50    -616250
+1000  84970      84970                  43579352            -43494382 -43494.38   -43494382
+(BASE: whole program at N=0 = 364519 Ir)
+top functions of the project-style run at N=1000:
+    82,788 (97.43%)  src/c1_interp.c:c1_eval_bpf'2
+    257 ( 0.30%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.26%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.24%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.24%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    164 ( 0.19%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    108 ( 0.13%)  ./malloc/./malloc/malloc.c:_int_malloc
+    102 ( 0.12%)  ./string/../sysdeps/aarch64/strchrnul.S:strchrnul
+
+=== variant gcc15-O2 (as in c1_build.sh) | F1 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+0     0          0                      0                   0       -           0
+1     2208       2208                   2208                0       0.00        0
+2     2364       2364                   2470                -106    -53.00      -106
+10    3207       3207                   24993               -21786  -2178.60    -21786
+100   13125      13125                  765675              -752550 -7525.50    -752550
+1000  112139     112139                 57189861            -57077722 -57077.72   -57077722
+(BASE: whole program at N=0 = 359276 Ir)
+top functions of the project-style run at N=1000:
+    90,961 (81.11%)  src/c1_interp.c:c1_eval_sm'2
+    18,990 (16.93%)  src/c1_interp.c:main'2
+    257 ( 0.23%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.20%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.18%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.18%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    164 ( 0.15%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    102 ( 0.09%)  ./string/../sysdeps/aarch64/strchrnul.S:strchrnul
+
+=== variant gcc15-O2 (as in c1_build.sh) | F4 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+0     0          0                      0                   0       -           0
+1     4346       4346                   110901              -106555 -106555.00  -106555
+2     6544       6544                   226194              -219650 -109825.00  -219650
+10    23723      23723                  1225677             -1201954 -120195.40  -1201954
+100   216016     216016                 21797886            -21581870 -215818.70  -21581870
+1000  2145108    2145108                1183493476          -1181348368 -1181348.37 -1181348368
+(BASE: whole program at N=0 = 486630 Ir)
+top functions of the project-style run at N=1000:
+    2,123,845 (99.01%)  src/c1_interp.c:c1_eval_sm'2
+    18,990 ( 0.89%)  src/c1_interp.c:main'2
+    257 ( 0.01%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.01%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.01%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    182 ( 0.01%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    164 ( 0.01%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    118 ( 0.01%)  ./malloc/./malloc/malloc.c:_int_malloc
+
+=== variant clang20-O2 | F1 bpf-opt | evaluator c1_eval_bpf
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     2792       2792                   2792                0       0.00        0
+1000  87748      87748                  45331752            -45244004 -45244.00   -45244004
+(BASE: whole program at N=0 = 339586 Ir)
+top functions of the project-style run at N=1000:
+    68,988 (78.62%)  src/c1_interp.c:c1_eval_bpf'2
+    16,008 (18.24%)  src/c1_interp.c:main'2
+    257 ( 0.29%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.26%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.23%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.23%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    174 ( 0.20%)  ./elf/./elf/dl-lookup.c:do_lookup_x'2
+    164 ( 0.19%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+
+=== variant clang20-O2 | F1 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     2826       2826                   2826                0       0.00        0
+1000  98778      98778                  50992222            -50893444 -50893.44   -50893444
+(BASE: whole program at N=0 = 333407 Ir)
+top functions of the project-style run at N=1000:
+    95,983 (97.17%)  src/c1_interp.c:c1_eval_sm'2
+    257 ( 0.26%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.23%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.21%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.20%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    174 ( 0.18%)  ./elf/./elf/dl-lookup.c:do_lookup_x'2
+    164 ( 0.17%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    118 ( 0.12%)  ./string/../sysdeps/aarch64/strcmp.S:strcmp
+
+=== variant clang20-O2 | F4 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     4990       4990                   174491              -169501 -169501.00  -169501
+1000  2157623    2157623                1253295324          -1251137701 -1251137.70 -1251137701
+(BASE: whole program at N=0 = 446668 Ir)
+top functions of the project-style run at N=1000:
+    2,154,743 (99.87%)  src/c1_interp.c:c1_eval_sm'2
+    257 ( 0.01%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.01%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.01%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    182 ( 0.01%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    174 ( 0.01%)  ./elf/./elf/dl-lookup.c:do_lookup_x'2
+    164 ( 0.01%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    118 ( 0.01%)  ./malloc/./malloc/malloc.c:_int_malloc
+
+=== variant gcc15-O0 | F1 bpf-opt | evaluator c1_eval_bpf
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     2641       2641                   2641                0       0.00        0
+1000  593933     593933                 299007571           -298413638 -298413.64  -298413638
+(BASE: whole program at N=0 = 1223950 Ir)
+top functions of the project-style run at N=1000:
+    531,678 (89.52%)  src/c1_interp.c:c1_eval_bpf'2
+    48,996 ( 8.25%)  src/c1_interp.c:main'2
+    11,000 ( 1.85%)  src/c1_interp.c:be16
+    257 ( 0.04%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.04%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.03%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.03%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    165 ( 0.03%)  src/c1_interp.c:c1_eval_bpf
+
+=== variant gcc15-O0 | F1 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     2426       2426                   2426                0       0.00        0
+1000  357961     357961                 180456960           -180098999 -180099.00  -180098999
+(BASE: whole program at N=0 = 1218845 Ir)
+top functions of the project-style run at N=1000:
+    323,764 (90.45%)  src/c1_interp.c:c1_eval_sm'2
+    32,000 ( 8.94%)  src/c1_interp.c:word_at
+    257 ( 0.07%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.06%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.06%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    200 ( 0.06%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    164 ( 0.05%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    96 ( 0.03%)  ./malloc/./malloc/malloc.c:_int_malloc
+
+=== variant gcc15-O0 | F4 sm-sc-fused | evaluator c1_eval_sm
+N     T=toggle   T0=toggle+atstart=no   INC(true eval Ir)   T-INC   (T-INC)/N   T0-INC
+1     10581      10581                  439246              -428665 -428665.00  -428665
+1000  8381140    8381140                4626716264          -4618335124 -4618335.12 -4618335124
+(BASE: whole program at N=0 = 1356694 Ir)
+top functions of the project-style run at N=1000:
+    7,518,602 (89.71%)  src/c1_interp.c:c1_eval_sm'2
+    860,256 (10.26%)  src/c1_interp.c:word_at
+    257 ( 0.00%)  ./stdio-common/./stdio-common/Xprintf_buffer_write.c:__printf_buffer_write'2
+    224 ( 0.00%)  ./stdio-common/./stdio-common/vfprintf-process-arg.c:__printf_buffer'2
+    204 ( 0.00%)  ./stdio-common/./stdio-common/vfprintf-internal.c:__printf_buffer_write'2
+    182 ( 0.00%)  ./stdio-common/./stdio-common/_fitoa_word.c:_itoa_word
+    164 ( 0.00%)  ./string/../sysdeps/aarch64/multiarch/../memcpy.S:__GI_memcpy
+    118 ( 0.00%)  ./malloc/./malloc/malloc.c:_int_malloc
+

@@ -1,0 +1,208 @@
+### callgrind_annotate M0_F3_bpf-opt_0.out
+--------------------------------------------------------------------------------
+Profile data file '/home/user/bpf-paper-replication/build/p6c/cg/M0_F3_bpf-opt_0.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 300898
+Trigger: Program termination
+Profiled target:  /home/user/bpf-paper-replication/build/p6c/c1_interp_ir --machine bpf --prog /home/user/bpf-paper-replication/build/p6c/oracle/M0_F3.opt.bpf --pcap /home/user/bpf-paper-replication/build/p6c/traces/mix_M0.pcap --first 0 --count 1000 (PID 5533, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+194,077 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+194,077 (100.0%)  src/c1_interp.c:c1_eval_bpf [/home/user/bpf-paper-replication/build/p6c/c1_interp_ir]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/c1_interp.c
+--------------------------------------------------------------------------------
+Ir              
+
+-- line 30 ----------------------------------------
+     .           
+     .           /* ---- register machine --------------------------------------------------------------------- */
+     .           static inline uint32_t be16(const uint8_t *p) { return ((uint32_t)p[0] << 8) | p[1]; }
+     .           static inline uint32_t be32(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
+     .           
+     .           #define CHK(off, sz) do { if ((uint32_t)(sz) > len || (uint32_t)(off) > len - (uint32_t)(sz)) return 0; } while (0)
+     .           
+     .           __attribute__((noinline)) uint32_t c1_eval_bpf(const struct bpf_insn *pc, const uint8_t *p, uint32_t len, uint64_t *icount)
+ 7,000 ( 3.61%)  {
+ 2,000 ( 1.03%)      uint32_t A = 0, X = 0, k;
+     .               uint32_t mem[BPF_MEMWORDS];
+     .               (void)icount;
+     .               for (;;) {
+21,249 (10.95%)          const struct bpf_insn *i = pc++;
+     .                   TICK();
+72,746 (37.48%)          switch (i->code) {
+ 1,000 ( 0.52%)          case BPF_RET | BPF_K: return i->k;
+     .                   case BPF_RET | BPF_A: return A;
+     .                   case BPF_LD | BPF_W | BPF_ABS: k = i->k; CHK(k, 4); A = be32(p + k); break;
+ 4,752 ( 2.45%)          case BPF_LD | BPF_H | BPF_ABS: k = i->k; CHK(k, 2); A = be16(p + k); break;
+ 2,529 ( 1.30%)          case BPF_LD | BPF_B | BPF_ABS: k = i->k; CHK(k, 1); A = p[k]; break;
+     .                   case BPF_LD | BPF_W | BPF_IND: k = X + i->k; if (k < X) return 0; CHK(k, 4); A = be32(p + k); break;
+19,976 (10.29%)          case BPF_LD | BPF_H | BPF_IND: k = X + i->k; if (k < X) return 0; CHK(k, 2); A = be16(p + k); break;
+ 4,215 ( 2.17%)          case BPF_LD | BPF_B | BPF_IND: k = X + i->k; if (k < X) return 0; CHK(k, 1); A = p[k]; break;
+     .                   case BPF_LD | BPF_IMM: A = i->k; break;
+     .                   case BPF_LD | BPF_LEN: A = len; break;
+     .                   case BPF_LD | BPF_MEM: A = mem[i->k]; break;
+     .                   case BPF_LDX | BPF_IMM: X = i->k; break;
+     .                   case BPF_LDX | BPF_LEN: X = len; break;
+     .                   case BPF_LDX | BPF_MEM: X = mem[i->k]; break;
+ 5,175 ( 2.67%)          case BPF_LDX | BPF_B | BPF_MSH: k = i->k; CHK(k, 1); X = (uint32_t)(p[k] & 0xf) << 2; break;
+     .                   case BPF_ST: mem[i->k] = A; break;
+     .                   case BPF_STX: mem[i->k] = X; break;
+     .                   case BPF_JMP | BPF_JA: pc += i->k; break;
+     .                   case BPF_JMP | BPF_JGT | BPF_K: pc += (A > i->k) ? i->jt : i->jf; break;
+     .                   case BPF_JMP | BPF_JGE | BPF_K: pc += (A >= i->k) ? i->jt : i->jf; break;
+13,725 ( 7.07%)          case BPF_JMP | BPF_JEQ | BPF_K: pc += (A == i->k) ? i->jt : i->jf; break;
+ 1,761 ( 0.91%)          case BPF_JMP | BPF_JSET | BPF_K: pc += (A & i->k) ? i->jt : i->jf; break;
+     .                   case BPF_JMP | BPF_JGT | BPF_X: pc += (A > X) ? i->jt : i->jf; break;
+     .                   case BPF_JMP | BPF_JGE | BPF_X: pc += (A >= X) ? i->jt : i->jf; break;
+     .                   case BPF_JMP | BPF_JEQ | BPF_X: pc += (A == X) ? i->jt : i->jf; break;
+31,949 (16.46%)          case BPF_JMP | BPF_JSET | BPF_X: pc += (A & X) ? i->jt : i->jf; break;
+     .                   case BPF_ALU | BPF_ADD | BPF_K: A += i->k; break;
+     .                   case BPF_ALU | BPF_SUB | BPF_K: A -= i->k; break;
+     .                   case BPF_ALU | BPF_MUL | BPF_K: A *= i->k; break;
+     .                   case BPF_ALU | BPF_DIV | BPF_K: if (i->k == 0) return 0; A /= i->k; break;
+     .                   case BPF_ALU | BPF_MOD | BPF_K: if (i->k == 0) return 0; A %= i->k; break;
+     .                   case BPF_ALU | BPF_AND | BPF_K: A &= i->k; break;
+     .                   case BPF_ALU | BPF_OR | BPF_K: A |= i->k; break;
+     .                   case BPF_ALU | BPF_XOR | BPF_K: A ^= i->k; break;
+-- line 79 ----------------------------------------
+-- line 90 ----------------------------------------
+     .                   case BPF_ALU | BPF_LSH | BPF_X: A <<= X; break;
+     .                   case BPF_ALU | BPF_RSH | BPF_X: A >>= X; break;
+     .                   case BPF_ALU | BPF_NEG: A = -A; break;
+     .                   case BPF_MISC | BPF_TAX: X = A; break;
+     .                   case BPF_MISC | BPF_TXA: A = X; break;
+     .                   default: die("unsupported BPF opcode"); /* not reached for the programs under test */
+     .                   }
+     .               }
+ 6,000 ( 3.09%)  }
+     .           
+     .           /* ---- stack machine ------------------------------------------------------------------------- */
+     .           enum sm_op { SM_PUSHLIT, SM_PUSHWORD, SM_PUSHIND, SM_PUSHIPIND, SM_EQ, SM_NEQ, SM_AND, SM_OR, SM_XOR,
+     .                        SM_ADD, SM_LSH, SM_RSH, SM_CAND, SM_COR };
+     .           struct sm_insn { uint8_t op; uint16_t arg; };
+     .           #define SM_MAXDEPTH 32
+     .           
+     .           static inline uint16_t word_at(const uint8_t *p, uint32_t len, uint32_t off)
+-- line 106 ----------------------------------------
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+194,077 (100.0%)  events annotated
+
+
+attribution check bpf-opt: lines naming an evaluator = 2
+### callgrind_annotate M0_F3_sm-sc-fused_0.out
+--------------------------------------------------------------------------------
+Profile data file '/home/user/bpf-paper-replication/build/p6c/cg/M0_F3_sm-sc-fused_0.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 383023
+Trigger: Program termination
+Profiled target:  /home/user/bpf-paper-replication/build/p6c/c1_interp_ir --machine sm --prog /home/user/bpf-paper-replication/src/c1_progs/F3_sc_fused.sm --pcap /home/user/bpf-paper-replication/build/p6c/traces/mix_M0.pcap --first 0 --count 1000 (PID 5587, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+588,099 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                file:function
+--------------------------------------------------------------------------------
+588,099 (100.0%)  src/c1_interp.c:c1_eval_sm [/home/user/bpf-paper-replication/build/p6c/c1_interp_ir]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: src/c1_interp.c
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 100 ----------------------------------------
+      .           /* ---- stack machine ------------------------------------------------------------------------- */
+      .           enum sm_op { SM_PUSHLIT, SM_PUSHWORD, SM_PUSHIND, SM_PUSHIPIND, SM_EQ, SM_NEQ, SM_AND, SM_OR, SM_XOR,
+      .                        SM_ADD, SM_LSH, SM_RSH, SM_CAND, SM_COR };
+      .           struct sm_insn { uint8_t op; uint16_t arg; };
+      .           #define SM_MAXDEPTH 32
+      .           
+      .           static inline uint16_t word_at(const uint8_t *p, uint32_t len, uint32_t off)
+      .           {
+ 46,893 ( 7.97%)      if (off > len || len - off < 2) return 0; /* a word not wholly inside the packet reads as 0 (design 3.2) */
+ 33,495 ( 5.70%)      return (uint16_t)((p[off] << 8) | p[off + 1]);
+      .           }
+      .           
+      .           __attribute__((noinline)) uint32_t c1_eval_sm(const struct sm_insn *prog, uint32_t n, const uint8_t *p, uint32_t len, uint64_t *icount)
+  7,000 ( 1.19%)  {
+      .               uint16_t stk[SM_MAXDEPTH];
+      .               int sp = 0;
+  5,000 ( 0.85%)      const struct sm_insn *pc = prog, *end = prog + n;
+      .               (void)icount;
+ 60,300 (10.25%)      while (pc < end) {
+ 29,150 ( 4.96%)          const struct sm_insn *i = pc++;
+      .                   TICK();
+174,900 (29.74%)          switch (i->op) {
+ 49,174 ( 8.36%)          case SM_PUSHLIT: stk[sp++] = i->arg; break;
+ 14,562 ( 2.48%)          case SM_PUSHWORD: stk[sp++] = word_at(p, len, i->arg); break;
+      .                   case SM_PUSHIND: stk[sp - 1] = word_at(p, len, stk[sp - 1]); break;
+      .                   case SM_PUSHIPIND: {
+  8,544 ( 1.45%)              uint32_t b = len > 14 ? p[14] : 0;
+ 29,904 ( 5.08%)              stk[sp++] = word_at(p, len, 14 + 4 * (b & 0xf) + i->arg);
+  4,272 ( 0.73%)              break;
+      .                   }
+ 73,689 (12.53%)          case SM_EQ: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] == stk[sp]); break;
+      .                   case SM_NEQ: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] != stk[sp]); break;
+ 12,843 ( 2.18%)          case SM_AND: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] & stk[sp]); break;
+      .                   case SM_OR: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] | stk[sp]); break;
+      .                   case SM_XOR: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] ^ stk[sp]); break;
+      .                   case SM_ADD: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] + stk[sp]); break;
+      .                   case SM_LSH: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] << (stk[sp] & 15)); break;
+      .                   case SM_RSH: sp--; stk[sp - 1] = (uint16_t)(stk[sp - 1] >> (stk[sp] & 15)); break;
+ 12,560 ( 2.14%)          case SM_CAND: if (stk[--sp] == 0) return 0; break;
+ 15,313 ( 2.60%)          case SM_COR: if (stk[--sp] != 0) return 1; break;
+      .                   default: die("unsupported stack-machine opcode");
+      .                   }
+      .               }
+  3,500 ( 0.60%)      return sp == 0 || stk[sp - 1] != 0; /* paper.txt L295-296 */
+  7,000 ( 1.19%)  }
+      .           
+      .           /* ---- program loading ----------------------------------------------------------------------- */
+      .           static struct bpf_insn *load_bpf(const char *path, uint32_t *n)
+      .           {
+      .               FILE *f = fopen(path, "r");
+      .               if (!f) { perror(path); exit(1); }
+      .               unsigned cnt;
+      .               if (fscanf(f, "%u", &cnt) != 1 || cnt == 0) die("bad bpf program header");
+-- line 152 ----------------------------------------
+
+--------------------------------------------------------------------------------
+Ir               
+--------------------------------------------------------------------------------
+588,099 (100.0%)  events annotated
+
+
+attribution check sm-sc-fused: lines naming an evaluator = 2

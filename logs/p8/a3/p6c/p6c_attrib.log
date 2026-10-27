@@ -1,0 +1,18 @@
+### A3 (i') leaked share (T - E) / T of every M2 run (reported, not gated)
+program          runs   min%    mean%   max%
+bpf-opt          120   0.83    1.69    2.55
+bpf-raw          120   0.23    1.19    2.55
+sm-full-general  120   0.90    6.42    18.88
+sm-sc-general    120   0.99    7.13    18.88
+sm-full-fused    120   0.98    6.71    18.88
+sm-sc-fused      120   0.99    7.68    18.88
+all 720 runs: min 0.23%, max 18.88%; runs with T == E: 0
+
+### A3 (i'') E of the toggle run vs evaluator self cost of a whole-program profile without --toggle-collect
+project build (scripts/c1_build.sh) | bpf-opt M0 F3 chunk 0 | T=227299 E(toggle)=225186 self(whole-program)=225186 leaked=0.93% -> equal
+project build (scripts/c1_build.sh) | sm-sc-fused M0 F3 chunk 0 | T=606382 E(toggle)=585252 self(whole-program)=585252 leaked=3.48% -> equal
+clang20-O2 | bpf-opt M0 F3 chunk 0 | T=267116 E(toggle)=248370 self(whole-program)=248370 leaked=7.02% -> equal
+clang20-O2 | sm-sc-fused M0 F3 chunk 0 | T=600917 E(toggle)=598164 self(whole-program)=598164 leaked=0.46% -> equal
+gcc15-O0 | bpf-opt M0 F3 chunk 0 | T=1907324 E(toggle)=1856236 self(whole-program)=1856236 leaked=2.68% -> equal
+gcc15-O0 | sm-sc-fused M0 F3 chunk 0 | T=2130751 E(toggle)=2128644 self(whole-program)=2128644 leaked=0.10% -> equal
+attrib (A3): 0 cross-check failures

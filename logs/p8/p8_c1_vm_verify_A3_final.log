@@ -1,0 +1,89 @@
+
+### 1. environment (real commands)
+Linux 6.17.0-19-generic aarch64
+gcc (Ubuntu 15.2.0-4ubuntu4) 15.2.0
+valgrind-3.25.1
+1.10.5
+tcpdump version 4.99.5
+Python 3.13.7
+
+### 2. build
+PASS: c1_build.sh (log logs/p8/a3/p6c/p6c_build_verify.log)
+
+### 3. regenerate programs and traces; compare with the frozen hashes in logs/p6c/p6c_design_freeze.log
+PASS: p3_make_packets.py (38 frames)
+PASS: c1_gen_progs.py
+PASS: c1_make_trace.py
+PASS: src/c1_progs/F1_full_any.sm matches frozen hash
+PASS: src/c1_progs/F1_sc_any.sm matches frozen hash
+PASS: src/c1_progs/F2_full_any.sm matches frozen hash
+PASS: src/c1_progs/F2_sc_any.sm matches frozen hash
+PASS: src/c1_progs/F3_full_fused.sm matches frozen hash
+PASS: src/c1_progs/F3_full_general.sm matches frozen hash
+PASS: src/c1_progs/F3_sc_fused.sm matches frozen hash
+PASS: src/c1_progs/F3_sc_general.sm matches frozen hash
+PASS: src/c1_progs/F4_full_any.sm matches frozen hash
+PASS: src/c1_progs/F4_sc_any.sm matches frozen hash
+PASS: build/p6c/traces/corpus38.pcap matches frozen hash
+PASS: build/p6c/traces/edge.pcap matches frozen hash
+PASS: build/p6c/traces/mix_M0.pcap matches frozen hash
+PASS: build/p6c/traces/mix_Mip.pcap matches frozen hash
+PASS: build/p6c/traces/mix_Mnonip.pcap matches frozen hash
+
+### 4. hand-traced M1 check (design section 6, item 3)
+PASS: c1_oracle wrote build/p6c/oracle/hand_F1.* (A3: directory created above, no stale file)
+dump of libpcap's optimized program for 'ip' (code jt jf k; first line = length):
+4
+40 0 0 12
+21 0 1 2048
+6 0 0 65535
+6 0 0 0
+hand trace, written from the dump BEFORE the comparison below:
+  [0] code 40 = ldh [12]   [1] code 21 = jeq #2048 jt 0 jf 1   [2] code 6 = ret #65535   [3] code 6 = ret #0
+  frame shorter than 14 bytes: [0] reads outside the packet and returns 0           -> 1 instruction
+  frame of >= 14 bytes, ethertype 0x0800: [0], [1], [2]                              -> 3 instructions
+  frame of >= 14 bytes, other ethertype:  [0], [1] (false, skips [2]), [3]           -> 3 instructions
+machine=bpf frames=1054 accepts=686 dechash=3b1996d7e1e8270b
+PASS: c1_interp_count wrote logs/p8/a3/p6c/p6c_handtrace.csv
+PASS: e-ip-H-src-cut0        expected 1, interpreter M1 1 (decision 0)
+PASS: e-ip-H-src-cut13       expected 1, interpreter M1 1 (decision 0)
+PASS: e-ip-H-src-cut14       expected 3, interpreter M1 3 (decision 1)
+PASS: e-arp-HG-cut42         expected 3, interpreter M1 3 (decision 0)
+PASS: hand-traced M1 values
+
+### 5. decision equivalence (libpcap oracle, tcpdump, 6 programs x 4 filters x 5 traces)
+PASS: c1_run.py equiv (log logs/p8/a3/p6c/p6c_equiv.log)
+libpcap raw program for F4 identical across traces: yes
+libpcap opt vs raw disagreement recorded: trace=edge filter=F3 frames=6
+equiv: 120 (trace, filter, program) combinations, 746208 frames evaluated, 0 failures
+
+### 6. callgrind chunks (720 runs) and attribution
+PASS: c1_run.py m2 (log logs/p8/a3/p6c/p6c_m2.log)
+m2: 720 callgrind runs, 0 build-agreement failures
+PASS: A3 (i') leak report and (i'') cross-check (log logs/p8/a3/p6c/p6c_attrib.log)
+### A3 (i') leaked share (T - E) / T of every M2 run (reported, not gated)
+program          runs   min%    mean%   max%
+bpf-opt          120   0.83    1.69    2.55
+bpf-raw          120   0.23    1.19    2.55
+sm-full-general  120   0.90    6.42    18.88
+sm-sc-general    120   0.99    7.13    18.88
+sm-full-fused    120   0.98    6.71    18.88
+sm-sc-fused      120   0.99    7.68    18.88
+all 720 runs: min 0.23%, max 18.88%; runs with T == E: 0
+
+### A3 (i'') E of the toggle run vs evaluator self cost of a whole-program profile without --toggle-collect
+project build (scripts/c1_build.sh) | bpf-opt M0 F3 chunk 0 | T=227299 E(toggle)=225186 self(whole-program)=225186 leaked=0.93% -> equal
+project build (scripts/c1_build.sh) | sm-sc-fused M0 F3 chunk 0 | T=606382 E(toggle)=585252 self(whole-program)=585252 leaked=3.48% -> equal
+clang20-O2 | bpf-opt M0 F3 chunk 0 | T=267116 E(toggle)=248370 self(whole-program)=248370 leaked=7.02% -> equal
+clang20-O2 | sm-sc-fused M0 F3 chunk 0 | T=600917 E(toggle)=598164 self(whole-program)=598164 leaked=0.46% -> equal
+gcc15-O0 | bpf-opt M0 F3 chunk 0 | T=1907324 E(toggle)=1856236 self(whole-program)=1856236 leaked=2.68% -> equal
+gcc15-O0 | sm-sc-fused M0 F3 chunk 0 | T=2130751 E(toggle)=2128644 self(whole-program)=2128644 leaked=0.10% -> equal
+attrib (A3): 0 cross-check failures
+
+### 7. summary and verdict
+PASS: c1_summarize.py
+verdict M2: MIXED | M1 (info): MIXED
+decision mismatches: 0 over 746208 frames
+PASS: logs/p8/a3/results/c1_summary.md identical to the previous run (deterministic)
+
+phase6c_verify: 0 FAIL

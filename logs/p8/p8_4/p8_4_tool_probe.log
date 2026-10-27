@@ -1,0 +1,65 @@
+# Phase 8.4 tool probe (read-only) 2026-10-26T15:17:23+05:30
+
+$ stress-ng --version
+stress-ng, version 0.19.03 (gcc 15.1.0, aarch64 Linux 6.17.0-19-generic)
+[rc=0]
+
+$ stress-ng --help 2>&1 | grep -iE -- '--cpu |--cpu-load|--cache |--cache-no-affinity|--cache-level|--stream |--vm |--vm-bytes|--vm-hang|--vm-keep|--timeout|--taskset|--sched |--class'
+      --class name            specify a class of stressors, use with
+      --sched type            set scheduler type
+      --taskset               use specific CPUs (set CPU affinity)
+-t N, --timeout T             timeout after T seconds
+-C N, --cache N               start N CPU cache thrashing workers
+      --cache-level N         only exercise specified cache
+      --cache-no-affinity     do not change CPU affinity
+-c N, --cpu N                 start N workers that perform CPU only loading
+-l P, --cpu-load P            load CPU by P %, 0=sleep, 100=full load (see -c)
+      --cpu-load-slice S      specify time slice during busy load
+                              --taskset option)
+      --stream N              start N workers exercising memory bandwidth
+-m N, --vm N                  start N workers spinning on anonymous mmap
+      --vm-bytes N            allocate N bytes per vm worker (default 256MB)
+      --vm-hang N             sleep N seconds before freeing memory
+      --vm-keep               redirty memory instead of reallocating
+Example: stress-ng --cpu 8 --iomix 4 --vm 2 --vm-bytes 128M --fork 4 --timeout 10s
+[rc=0]
+
+$ stress-ng --cache-no-affinity 2>&1 | head -2
+stress-ng: info:  [159250] defaulting to a 1 day run per stressor
+stress-ng: error: [159250] no stress workers invoked
+[rc=0]
+
+$ cat results/calibration.json | head -c 600
+{
+  "session": "cal_1792349286",
+  "knees": {
+    "64": {
+      "knee_pps": 64000,
+      "ladder_top_reached": true,
+      "steps": [
+        {
+          "pps": 1000,
+          "offered_pps": 998.1322977284186,
+          "kernel_drops": 0,
+          "kernel_packets": 5030,
+          "F5050": 5003,
+          "C5050": 27,
+          "X": 0,
+          "reasons": []
+        },
+        {
+          "pps": 2000,
+          "offered_pps": 1997.9075123669597,
+          "kernel_drops": 0,
+          "kernel_packets": 10031,
+          "F5050": 10004,
+          "C5050": 27,
+          "X": 0,
+          "reaso[rc=0]
+
+$ nproc; cat /proc/meminfo | grep -E 'MemAvailable|SwapFree|SwapTotal'
+5
+MemAvailable:    3163520 kB
+SwapTotal:       4194300 kB
+SwapFree:        2652456 kB
+[rc=0]

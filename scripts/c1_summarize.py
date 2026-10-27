@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Phase 6c summary and C1 verdict. Usage: python3 -I scripts/c1_summarize.py
+Reads ONLY files under logs/p6c/ (plus CLAIMS.md for the paper's Fig. 8 labels) and writes
+results/c1_summary.md, results/c1_summary.json and results/c1_verdict.md. The rules applied are those of
+docs/phase6c_design.md section 7 (frozen before any counter run; amendments A1, A2, A3 in section 9).
+C1_LOG and C1_RES override the input and output directories. Amendment A3: when p6c_m2.tsv has an Ir_eval
+column, M2 is that evaluator-only count (E) and the toggle total (T) is reported beside it; without the column
+(the Phase 6c x86_64 outputs, where attribution was 100.0%) E = T. Platform strings come from p6c_env.log when
+it exists, otherwise the Phase 6c container values are used.
+"""
+import os
+import csv
+import gzip
+import json
+import math
+import re
+import statistics
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LOG = ROOT / os.environ.get("C1_LOG", "logs/p6c")
+RES = ROOT / os.environ.get("C1_RES", "results")
+T975 = 2.262157  # Student t, df = 9, two-sided 95%
+FILTERS = ("F1", "F2", "F3", "F4")
+MIXES = ("M0", "Mip", "Mnonip")
+BPFS = ("bpf-opt", "bpf-raw")
+SMS = ("sm-full-general", "sm-sc-general", "sm-full-fused", "sm-sc-fused")
+PRIMARY = ("M0", "bpf-opt", "sm-sc-fused")
+MAG_LO, MAG_HI = None, None  # set from the paper's 18.1 below
+
+
+def paper_fig8():
+    """Fig. 8 labels as transcribed in CLAIMS.md C1 (paper.txt L758-807): rows '| n name | BPF | CSPF | ratio |'."""
+    rows = {}
+    for line in (ROOT / "CLAIMS.md").read_text().splitlines():
+        m = re.match(r"\s*\|\s*([1-4])\s+[^|]*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([\d.]+)x\s*\|", line)
+        if m:
+            rows["F" + m.group(1)] = (int(m.group(2)), int(m.group(3)), float(m.group(4)))
+    assert len(rows) == 4, rows
+    return rows
+
+
+def load_m2():
+    """(E, T): per (mix, filter, program) the ten per-chunk means of the evaluator-only Ir (A3) and of the toggle total."""
+    e, t = {}, {}
+    with open(LOG / "p6c_m2.tsv") as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            k, c = (r["mix"], r["filter"], r["program"]), int(r["chunk"])
+            t.setdefault(k, {})[c] = int(r["Ir"]) / int(r["frames"])
+            e.setdefault(k, {})[c] = int(r.get("Ir_eval") or r["Ir"]) / int(r["frames"])
+    fix = lambda d: {k: [v[i] for i in range(10)] for k, v in d.items()}
+    return fix(e), fix(t)
+
+
+def load_env():
+    """Platform strings from p6c_env.log (written by phase6c_verify.sh); the Phase 6c container values otherwise."""
+    env = {"uname": "x86_64 container", "gcc": "gcc 13.3.0", "valgrind": "valgrind 3.22.0", "libpcap": "1.10.4", "arch": "x86_64",
+           "src": "`logs/p6c/p6c_env_probe.log`, D6c.1"}
+    f = LOG / "p6c_env.log"
+    if f.exists():
+        for line in f.read_text().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+        env["src"] = "`%s`" % f.relative_to(ROOT)
+    return env
+
+
+def load_m1():
+    d = {}
+    for mix in MIXES:
+        for f in FILTERS:
+            for p in BPFS + SMS:
+                rows = gzip.open(LOG / "m1" / ("%s_%s_%s.csv.gz" % (mix, f, p)), "rt").read().splitlines()[1:]
+                v = [int(x.split(",")[2]) for x in rows]
+                assert len(v) == 10000
+                d[(mix, f, p)] = [statistics.fmean(v[c * 1000:(c + 1) * 1000]) for c in range(10)]
+    return d
+
+
+def ratio(a, b):
+    """a, b: ten chunk means each. Point = ratio of means; CI = t interval of the ten per-chunk ratios."""
+    r = [x / y for x, y in zip(a, b)]
+    m, s = statistics.fmean(r), statistics.stdev(r)
+    h = T975 * s / math.sqrt(len(r))
+    return statistics.fmean(a) / statistics.fmean(b), m - h, m + h
+
+
+def evaluate(data, paper):
+    """Apply the section 7 sub-criteria for one metric. Returns dict with cells and sub-results."""
+    cells = {}
+    for mix in MIXES:
+        for bp in BPFS:
+            for sm in SMS:
+                cells[(mix, bp, sm)] = {f: ratio(data[(mix, f, sm)], data[(mix, f, bp)]) for f in FILTERS}
+    prim = cells[PRIMARY]
+    c1a_prim = all(prim[f][1] > 1 for f in FILTERS)
+    c1a_cells = {k: all(v[f][1] > 1 for f in FILTERS) for k, v in cells.items()}
+    pts = [prim[f][0] for f in FILTERS]
+    c1b = all(pts[i] < pts[i + 1] for i in range(3))
+    top = paper["F4"][2]
+    c1c = (top / 2) <= max(pts) <= (top * 2)
+    return {"cells": cells, "c1a_primary": c1a_prim, "c1a_cells": c1a_cells, "c1a_all": all(c1a_cells.values()),
+            "c1b": c1b, "c1c": c1c, "max_ratio": max(pts), "band": (top / 2, top * 2)}
+
+
+def verdict(e):
+    if not e["c1a_primary"]:
+        return "NOT SUPPORTED"
+    if e["c1a_all"] and e["c1b"] and e["c1c"]:
+        return "SUPPORTED"
+    return "MIXED"
+
+
+def fmt(x):
+    return "%.3g" % x if abs(x) < 1000 else "%.0f" % x
+
+
+def main():
+    paper = paper_fig8()
+    m2, m2_total = load_m2()
+    m1 = load_m1()
+    env = load_env()
+    a3 = any(m2[k] != m2_total[k] for k in m2) or "Ir_eval" in open(LOG / "p6c_m2.tsv").readline()
+    ev2, ev1 = evaluate(m2, paper), evaluate(m1, paper)
+    v2, v1 = verdict(ev2), verdict(ev1)
+    mean = lambda d, k: statistics.fmean(d[k])
+
+    equiv = list(csv.DictReader(open(LOG / "p6c_equiv.tsv"), delimiter="\t"))
+    frames = sum(int(r["frames"]) for r in equiv)
+    mism = sum(int(r["decision_mismatches"]) for r in equiv)
+    tdm = sum(1 for r in equiv if int(r["tcpdump_accepts"]) != int(r["oracle_accepts"]) and r["reference_program"] == "opt")
+    hashbad = sum(1 for r in equiv if r["count_ir_build_hash_equal"] != "1")
+    eqlog = (LOG / "p6c_equiv.log").read_text()
+    lens = {}
+    for m in re.finditer(r'expr="([^"]+)" frames=10000 accepts=\d+ opt_len=(\d+) raw_len=(\d+)', eqlog):
+        lens[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+    static_sm = {}
+    for line in (LOG / "p6c_progs_gen.log").read_text().splitlines():
+        n, c = line.split()[0], int(line.split()[1])
+        static_sm[n] = c
+    optraw = re.findall(r"libpcap opt vs raw disagreement recorded: trace=(\S+) filter=(\S+) frames=(\d+)", eqlog)
+    EXPR = {"F1": "ip", "F2": "ip host 10.0.0.10",
+            "F3": "ip and tcp and (port 79 or port 53 or port 513 or port 514)", "F4": "host 10.0.0.10 and host 10.0.0.20"}
+
+    out = []
+    w = out.append
+    w("# Phase 6c summary: C1, instructions per packet\n")
+    w("Generated by scripts/c1_summarize.py from logs/p6c/ (and the Fig. 8 labels in CLAIMS.md). Rules: docs/phase6c_design.md (frozen before any counter run; amendments A1, A2, A3 in section 9). Environment: %s, %s -O2, %s callgrind (%s). **Mixes and CSPF programs are our own choices (D6c.3, D6c.4); only ratios and shapes are compared with the paper.**\n" % (env["uname"], env["gcc"], env["valgrind"], env["src"]))
+    w("## 1. Checks (design section 6, amendments A1 and A2)\n")
+    w("- Decision equivalence: %d (trace, filter, program) combinations, %d frames evaluated, **%d decision mismatches** (each BPF program against libpcap's decision for that program; CSPF variants against the optimized program's decisions)." % (len(equiv), frames, mism))
+    w("- Match counts of the libpcap reference equal `tcpdump -r -w` record counts in %d of %d optimized-reference rows (%d differ)." % (sum(1 for r in equiv if r["reference_program"] == "opt") - tdm, sum(1 for r in equiv if r["reference_program"] == "opt"), tdm))
+    w("- Counting build and callgrind build agree on the decision hash of every run: %s (%d disagreements)." % ("yes" if hashbad == 0 else "NO", hashbad))
+    w("- M2 build agreement (accept count of each callgrind chunk equals the counting build's): all 720 chunk runs (`logs/p6c/p6c_m2.log`).")
+    if a3:
+        leak = [(m2_total[k][c] - m2[k][c]) / m2_total[k][c] * 100 for k in m2 for c in range(10)]
+        w("- Attribution (amendment A3): M2 is the Ir attributed to the evaluator functions only (E); the toggle total T is reported in section 3b. Leaked share (T - E) / T over all %d callgrind runs: min %.2f%%, max %.2f%% (`p6c_attrib.log` has the per-program table and the cross-check against a whole-program profile)." % (len(leak), min(leak), max(leak)))
+    else:
+        w("- Attribution (A1 i): `logs/p6c/p6c_attrib.log` shows 100.0% of collected Ir inside `c1_eval_bpf` and inside `c1_eval_sm` respectively.")
+    if optraw:
+        w("- Observation about libpcap: its optimized and unoptimized programs disagree on " + "; ".join("%s frames of trace %s, filter %s" % (n, t, f) for t, f, n in optraw) + " (`logs/p6c/p6c_diag_edge_F3.log`). On the three mixes they never disagree.")
+    w("")
+    w("## 2. Programs (static instruction counts)\n")
+    w("| filter | libpcap expression | BPF-opt | BPF-raw | CSPF full | CSPF sc | CSPF full (fused) | CSPF sc (fused) |")
+    w("|---|---|---|---|---|---|---|---|")
+    for f in FILTERS:
+        o, r = lens[EXPR[f]]
+        if f == "F3":
+            cells = [static_sm["F3_full_general.sm"], static_sm["F3_sc_general.sm"], static_sm["F3_full_fused.sm"], static_sm["F3_sc_fused.sm"]]
+        else:
+            cells = [static_sm["%s_full_any.sm" % f], static_sm["%s_sc_any.sm" % f]] * 2
+        w("| %s | `%s` | %d | %d | %d | %d | %d | %d |" % ((f, EXPR[f], o, r) + tuple(cells)))
+    w("")
+    w("## 3. Primary pairing: mix M0, BPF-opt vs CSPF sc-fused\n")
+    w("Means over the ten 1000-frame chunks. M1 = filter instructions executed per frame; M2 = %s instructions per frame inside the evaluator (callgrind Ir attributed to the evaluator functions). R = CSPF / BPF, 95%% t-interval of the ten per-chunk ratios in brackets. The paper columns are the Fig. 8 labels (paper.txt L758-807, via CLAIMS.md): BPF, CSPF, ratio.\n" % env["arch"])
+    w("| filter | M1 BPF | M1 CSPF | M1 R | M2 BPF | M2 CSPF | M2 R | paper BPF | paper CSPF | paper R |")
+    w("|---|---|---|---|---|---|---|---|---|---|")
+    for f in FILTERS:
+        k_b, k_s = ("M0", f, "bpf-opt"), ("M0", f, "sm-sc-fused")
+        r1, r2 = ev1["cells"][PRIMARY][f], ev2["cells"][PRIMARY][f]
+        pb, ps, pr = paper[f]
+        w("| %s | %s | %s | %s [%s, %s] | %s | %s | %s [%s, %s] | %d | %d | %.1f |" % (
+            f, fmt(mean(m1, k_b)), fmt(mean(m1, k_s)), fmt(r1[0]), fmt(r1[1]), fmt(r1[2]),
+            fmt(mean(m2, k_b)), fmt(mean(m2, k_s)), fmt(r2[0]), fmt(r2[1]), fmt(r2[2]), pb, ps, pr))
+    w("")
+    w("Host instructions per filter instruction (M2 / M1), primary programs, mix M0:\n")
+    w("| filter | BPF-opt | CSPF sc-fused | ratio |")
+    w("|---|---|---|---|")
+    for f in FILTERS:
+        b = mean(m2, ("M0", f, "bpf-opt")) / mean(m1, ("M0", f, "bpf-opt"))
+        s = mean(m2, ("M0", f, "sm-sc-fused")) / mean(m1, ("M0", f, "sm-sc-fused"))
+        w("| %s | %s | %s | %s |" % (f, fmt(b), fmt(s), fmt(s / b)))
+    w("")
+    if a3:
+        w("## 3b. Toggle total T vs evaluator-only E (amendment A3), mix M0, primary programs\n")
+        w("T = every Ir collected under `--toggle-collect`, E = Ir attributed to the evaluator functions (the M2 used above). Per frame, means over the ten chunks.\n")
+        w("| filter | machine | T | E | leaked share |")
+        w("|---|---|---|---|---|")
+        for f in FILTERS:
+            for lab, p in (("BPF-opt", "bpf-opt"), ("CSPF sc-fused", "sm-sc-fused")):
+                t_, e_ = mean(m2_total, ("M0", f, p)), mean(m2, ("M0", f, p))
+                w("| %s | %s | %s | %s | %.1f%% |" % (f, lab, fmt(t_), fmt(e_), 100 * (t_ - e_) / t_))
+        w("")
+        rt = {f: ratio(m2_total[("M0", f, "sm-sc-fused")], m2_total[("M0", f, "bpf-opt")]) for f in FILTERS}
+        w("R with the toggle totals T (not used for the verdict): " + ", ".join("%s %s" % (f, fmt(rt[f][0])) for f in FILTERS) + ".\n")
+    for name, ev in (("M2 (host instructions, gates the verdict)", ev2), ("M1 (filter instructions, informational)", ev1)):
+        w("## 4%s. Robustness grid, %s\n" % ("a" if name.startswith("M2") else "b", name))
+        w("R = CSPF / BPF [95%% interval]. A cell satisfies C1a if every filter's interval lies above 1.\n")
+        w("| mix | BPF | CSPF | F1 | F2 | F3 | F4 | C1a |")
+        w("|---|---|---|---|---|---|---|---|")
+        for (mix, bp, sm), v in sorted(ev["cells"].items()):
+            w("| %s | %s | %s | %s | C1a %s |" % (mix, bp, sm, " | ".join("%s [%s, %s]" % (fmt(v[f][0]), fmt(v[f][1]), fmt(v[f][2])) for f in FILTERS), "yes" if ev["c1a_cells"][(mix, bp, sm)] else "NO"))
+        w("")
+    RES.mkdir(parents=True, exist_ok=True)
+    open(RES / "c1_summary.md", "w").write("\n".join(out) + "\n")
+
+    vd = []
+    w = vd.append
+    w("# C1 verdict (Phase 6c)\n")
+    w("Computed by scripts/c1_summarize.py with the rules of docs/phase6c_design.md section 7. Tables: `results/c1_summary.md`.\n")
+    w("**Verdict (M2, host instructions per packet): %s**\n" % v2)
+    w("- Primary pairing: mix M0, BPF-opt vs CSPF sc-fused.")
+    w("- C1a (every filter's 95%% interval of R above 1, primary): **%s**; in all %d grid cells: **%s** (%d of %d cells)." % (
+        "holds" if ev2["c1a_primary"] else "fails", len(ev2["cells"]), "holds" if ev2["c1a_all"] else "fails", sum(ev2["c1a_cells"].values()), len(ev2["cells"])))
+    w("- C1b (R(F1) < R(F2) < R(F3) < R(F4), primary): **%s** (R = %s)." % ("holds" if ev2["c1b"] else "fails", ", ".join(fmt(ev2["cells"][PRIMARY][f][0]) for f in FILTERS)))
+    w("- C1c (largest R within a factor of two of the paper's %.1f, i.e. in [%.2f, %.1f]): **%s** (largest R = %s)." % (
+        paper["F4"][2], ev2["band"][0], ev2["band"][1], "holds" if ev2["c1c"] else "fails", fmt(ev2["max_ratio"])))
+    failing = [k for k, ok in ev2["c1a_cells"].items() if not ok]
+    if failing:
+        w("- Grid cells where C1a fails (M2): " + "; ".join("%s / %s / %s" % k for k in failing) + ".")
+    w("")
+    w("Informational, M1 (filter instructions executed): verdict by the same rule would be **%s**; C1a primary %s, all cells %s, C1b %s, C1c %s (largest R = %s)." % (
+        v1, "holds" if ev1["c1a_primary"] else "fails", "holds" if ev1["c1a_all"] else "fails", "holds" if ev1["c1b"] else "fails", "holds" if ev1["c1c"] else "fails", fmt(ev1["max_ratio"])))
+    w("")
+    w("Scope: the verdict concerns the register-machine and stack-machine MODELS as implemented here (our interpreters, our CSPF programs, libpcap's %s BPF programs, assumed traffic mixes, %s %s -O2). It does not reproduce the 1993 numbers, and no 1993 absolute is compared; the paper's labels appear only as the reference ratios of C1b and C1c. Limits recorded in DEVIATIONS D6c.1 to D6c.4 and in `docs/phase6c_design.md`." % (env["libpcap"], env["arch"], env["gcc"]))
+    open(RES / "c1_verdict.md", "w").write("\n".join(vd) + "\n")
+
+    js = {"verdict_m2": v2, "verdict_m1": v1, "primary": PRIMARY,
+          "ratios_m2_primary": {f: ev2["cells"][PRIMARY][f] for f in FILTERS},
+          "ratios_m1_primary": {f: ev1["cells"][PRIMARY][f] for f in FILTERS},
+          "c1a_primary": ev2["c1a_primary"], "c1a_all": ev2["c1a_all"], "c1b": ev2["c1b"], "c1c": ev2["c1c"]}
+    json.dump(js, open(RES / "c1_summary.json", "w"), indent=1)
+    print("verdict M2: %s | M1 (info): %s" % (v2, v1))
+    print("decision mismatches: %d over %d frames" % (mism, frames))
+
+
+if __name__ == "__main__":
+    main()

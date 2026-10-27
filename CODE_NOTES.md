@@ -135,3 +135,48 @@ No new libbpf function or BPF helper beyond those already recorded (Phase 3: `bp
 | symbol | file:line | use |
 |---|---|---|
 | `nanosleep` | /usr/include/time.h:281 | the classifier loader sleeps in 1 s steps until SIGTERM/SIGINT (no per-second work) |
+
+## Phase 6c: C1 instruction counts (src/c1_oracle.c, src/c1_interp.c)
+Environment of this sub-phase: x86_64 container, libpcap 1.10.4 (`logs/p6c/p6c_env_probe.log`). Headers grepped before use (`logs/p6c/p6c_header_grep.log`). These are libpcap symbols, not libbpf; recorded here under the same rule. No libbpf function and no BPF helper is used in 6c.
+
+| symbol | file:line | use |
+|---|---|---|
+| `pcap_open_dead(int, int)` | /usr/include/pcap/pcap.h:518 | handle for compiling a filter with no device (`DLT_EN10MB`, snaplen 65535) |
+| `pcap_compile(pcap_t *, struct bpf_program *, const char *, int, bpf_u_int32)` | /usr/include/pcap/pcap.h:613 | expression to classic-BPF program, optimize flag 1 and 0 |
+| `pcap_offline_filter(const struct bpf_program *, const struct pcap_pkthdr *, const u_char *)` | /usr/include/pcap/pcap.h:626 | the decision oracle: libpcap's own evaluator, non-zero = accept |
+| `pcap_freecode`, `pcap_close`, `pcap_geterr` | /usr/include/pcap/pcap.h:623, :562, :607 | cleanup, error text |
+| `PCAP_NETMASK_UNKNOWN` | /usr/include/pcap/pcap.h:365 | netmask argument of `pcap_compile` |
+| `struct bpf_program` (`bf_len`, `bf_insns`) | /usr/include/pcap/bpf.h:116 | compiled program |
+| `struct bpf_insn` (`code`, `jt`, `jf`, `k`) | /usr/include/pcap/bpf.h:244 | one classic-BPF instruction (paper section 3.3 format: opcode:16, jt:8, jf:8, k:32) |
+| `struct pcap_pkthdr` (`ts`, `caplen`, `len`) | /usr/include/pcap/pcap.h:245 | per-packet header passed to `pcap_offline_filter` |
+| `DLT_EN10MB` | /usr/include/pcap/dlt.h:63 | Ethernet link type |
+| opcode macros `BPF_CLASS`, `BPF_LD`..`BPF_MISC` (:135-143), `BPF_SIZE`/`BPF_W`/`BPF_H`/`BPF_B` (:146-149), `BPF_MODE`/`BPF_IMM`/`BPF_ABS`/`BPF_IND`/`BPF_MEM`/`BPF_LEN`/`BPF_MSH` (:151-157), `BPF_OP`/`BPF_ADD`..`BPF_XOR` (:162-173), `BPF_JA`/`BPF_JEQ`/`BPF_JGT`/`BPF_JGE`/`BPF_JSET` (:180-184), `BPF_SRC`/`BPF_K`/`BPF_X` (:196-198), `BPF_RVAL`/`BPF_A` (:201-202), `BPF_MISCOP`/`BPF_TAX`/`BPF_TXA` (:206-224), `BPF_MEMWORDS` (:285) | /usr/include/pcap/bpf.h | opcode decoding in the register-machine interpreter; `BPF_MSH` is the `4*([k]&0xf)` mode of paper Table 2 |
+| `bpf_filter`, `bpf_validate` | /usr/include/pcap/bpf.h:271, :274 | present in the header but NOT used: the interpreter under test is our own code, `bpf_filter` is not called (the oracle path is `pcap_offline_filter`) |
+Standard C and POSIX calls used (`fopen`, `fread`, `fprintf`, `malloc`, `strtoul`, `qsort`-free) are libc, not recorded further. Port numbers 79 finger, 53 domain, 513 login, 514 shell were read from `/etc/services` (`logs/p6c/p6c_services_grep.log`).
+
+## Phase 8.2: sender-limit test (scripts/p8_2_*, docs/phase8_2_design.md)
+Environment: aarch64 VM, kernel 6.17.0-19-generic, `perf version 6.17.13` (`logs/p8/p8_2/p8_2_perf_probe_nonroot.log`). **No libbpf function and no BPF helper is added in 8.2**: the capture programs and the classifier are the existing binaries (`build/baseline_sniffer`, `build/loader`, `build/classifier`). The tools below are command-line programs; their options were taken from the installed `-h` output and `perf list`, recorded in the probe log, and are recorded here under the same rule.
+
+| item | where it was found | use |
+|---|---|---|
+| `perf record -e <event> -a -C <cpu list> -F <freq> -g -o <file> -- <cmd>` | `perf record -h` in the probe log: `-a, --all-cpus`, `-C, --cpu <cpu>`, `-e, --event`, `-F, --freq`, `-g` (call-graph), `-o, --output`, `-B, --no-buildid` | sampling of the sender cores 1 and 4 during a flood |
+| event `cpu-clock` | `perf list sw` in the probe log ("Per-CPU high-resolution timer based event. Unit: software"); backing constant `PERF_COUNT_SW_CPU_CLOCK = 0` at /usr/include/linux/perf_event.h:122 | the only usable sampling event: `ls /sys/bus/event_source/devices/` lists breakpoint, kprobe, software, tracepoint, uprobe (no hardware PMU) and `perf list hw` printed nothing |
+| `perf script -i <file> -F comm,cpu,ip,sym` | `perf script -h` in the probe log: `-F, --fields` lists `comm`, `cpu`, `ip`, `sym`, `dso`; `-i, --input` | text dump of samples with call chains for counting |
+| `perf report --stdio --no-children --sort comm,dso,symbol -i <file>` | `perf report -h` in the probe log: `--stdio`, `--no-children`, `-s, --sort` | informational top-of-profile listing |
+| permissions | `perf_event_paranoid = 4`, `kptr_restrict = 1`, `/proc/kallsyms` addresses read as 0 for the non-root user (probe log) | perf runs as root (the run scripts are launched with sudo); non-root `perf record` fails with "Access to performance monitoring and observability operations is limited" (probe log) |
+| kernel symbol `packet_rcv` | not in any installed header (kernel source is not installed here); it appears in the short paper's call graphs (`~/bpf-paper-short/data/perf/*/perf_report.txt`, read-only) | the AF_PACKET tap handler to look for in stacks. **UNVERIFIED on this machine until the Phase 8.2 probe lists the AF_PACKET handler symbols found in stacks; whether a ring-buffer variant (`tpacket_rcv`) occurs is likewise UNVERIFIED** |
+
+## Phase 8.4: V8 validation (scripts/p8_4_*, docs/phase8_4_design.md)
+No libbpf function and no BPF helper is added: the captures and the classifier are the existing binaries. Tools used and where their options were found (`logs/p8/p8_4/p8_4_tool_probe.log`, `stress-ng, version 0.19.03` on this aarch64 VM):
+
+| item | where it was found | use |
+|---|---|---|
+| `stress-ng --cpu N` / `-c N` ("start N workers that perform CPU only loading"), `-l P, --cpu-load P` | `stress-ng --help` in the probe log | pure CPU noise (`--cpu-load` is not used: the duty cycle is made by SIGSTOP/SIGCONT so that the cache stressor can use the same mechanism) |
+| `stress-ng --cache N` / `-C N` ("start N CPU cache thrashing workers"), `--cache-no-affinity` ("do not change CPU affinity") | same | cache/memory pressure noise; without `--cache-no-affinity` the stressor changes its own CPU affinity and would leave the pinned core |
+| `stress-ng --vm N`, `--vm-bytes N`, `--vm-hang N` ("sleep N seconds before freeing memory"), `--vm-keep` | same | global memory pressure holding a fixed number of bytes (S3); `--vm-keep` is not used (it redirties memory continuously) |
+| `-t N, --timeout T` | same ("defaulting to a 1 day run per stressor" without it) | an explicit long timeout; the workers are killed by the controller |
+| `taskset -c <cpus>` | existing use in `scripts/bench.sh` | pinning of the controller and of every worker |
+| SIGSTOP, SIGCONT, SIGKILL via Python `os.kill`/`os.killpg`, `os.sched_getaffinity` | Python standard library (no C header used) | duty cycling and the affinity check |
+| `/proc/meminfo` `MemAvailable`, `SwapTotal`, `SwapFree` | read in Phase 8.1/8.2 | memory gate and the S3 holding size |
+| `stress-ng --cache-enable-all` | message printed by `stress-ng --cache 1` in `logs/p8/p8_4/p8_4_controller_functional_test.log` ("use --cache-enable-all to enable all cache flags for heavier cache stressing"); amendment A1 of the Phase 8.4 design | the cache noise uses it |
+| `/proc/<pid>/stat` fields 14 (utime) and 15 (stime), in clock ticks | `proc(5)`; read as in `scripts/summarize.py` (`CLK_TCK`) | CPU time consumed by a stress-ng worker (injected rate, design amendment A2) |

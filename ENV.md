@@ -37,3 +37,27 @@ Raw logs: logs/phase0_env_probe.log (Phase 0 probe, before setup), logs/phase1_e
 
 ## Phase 6 matrix session mode (reviewer ruling 3, D3; release condition f)
 Matrix runs performed in the graphical session. GUI noise mitigated by the V8 canary rule and idle-subtraction (idle baseline 0.131 CPU-s/s, down from 1.0 to 2.7 CPU-s/s in the first smoke runs; canary_max 0.0689 CPU-s/s on cores {0,1}, 0.0369 on core {0}; results/baseline_calibration.json). Attempting a non-graphical session (`systemctl isolate multi-user.target`) was deemed too risky for workflow continuity: it would end the desktop app session this work runs in.
+
+## Phase 8 session (2026-10-25, aarch64 VM; raw: logs/p8/p8_env_probe.log, logs/p8/p8_post_install_probe.log)
+Re-probed with real commands; the older rows above were not reused. Values as printed.
+
+| key | command | observed value |
+|---|---|---|
+| kernel / arch | `uname -srm` | `Linux 6.17.0-19-generic aarch64` |
+| dpkg arch | `dpkg --print-architecture` | `arm64` |
+| gcc | `gcc --version \| head -1` | `gcc (Ubuntu 15.2.0-4ubuntu4) 15.2.0` |
+| clang | `clang --version \| head -1` | `Ubuntu clang version 20.1.8 (0ubuntu4)` |
+| libbpf | `pkg-config --modversion libbpf` | `1.6.2` (`libbpf-dev:arm64 1:1.6.2-1`) |
+| bpftool | `bpftool version` | `bpftool v7.7.0` / `using libbpf v1.7` |
+| perf | `perf --version` | `perf version 6.17.13` |
+| valgrind | `valgrind --version` | `valgrind-3.25.1` (installed this session, `1:3.25.1-0ubuntu1`) |
+| stress-ng | `stress-ng --version` | `stress-ng, version 0.19.03 (gcc 15.1.0, aarch64 Linux 6.17.0-19-generic)` (installed this session) |
+| tcpdump / libpcap runtime | `tcpdump --version` | `tcpdump version 4.99.5`, `libpcap version 1.10.5 (with TPACKET_V3)` |
+| libpcap-dev | `pkg-config --modversion libpcap` | `1.10.5` (`libpcap-dev:arm64 1.10.5-2ubuntu2`, installed this session) |
+| python3 | `python3 --version` | `Python 3.13.7` |
+| nproc | `nproc` | `5` |
+| perf_event_paranoid | `cat /proc/sys/kernel/perf_event_paranoid` | `4` |
+| bpf_jit_enable | `cat /proc/sys/net/core/bpf_jit_enable` | `1` |
+| sudo | `sudo -n true` | `sudo-rs: interactive authentication is required` (password needed; apt run in the user's Terminal tab, `logs/p8/p8_apt_install.log`) |
+
+Notes: the Phase 6c environment (D6c.1) was an x86_64 container with gcc 13.3.0, valgrind 3.22.0, libpcap 1.10.4, tcpdump 4.99.4; the compiler, valgrind and libpcap versions all differ from this VM.
