@@ -4,13 +4,6 @@ Every measured run that failed a pre-declared validity rule (V1-V8, V5'a-e; docs
 
 | file | cfg | traffic | size | rep | attempt | rule(s) |
 |---|---|---|---|---|---|---|
-| bench_A_flood_256_1.log | A | flood | 256 | 1 | 3 (final) | V8 canary 0.015 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_A_flood_256_2.log | A | flood | 256 | 2 | 3 (final) | V8 canary 0.019 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_A_flood_256_3.log | A | flood | 256 | 3 | 3 (final) | V8 canary 0.014 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_A_flood_256_5.log | A | flood | 256 | 5 | 3 (final) | V8 canary 0.018 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_B_flood_256_3.log | B | flood | 256 | 3 | 3 (final) | V8 canary 0.017 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_B_flood_256_4.log | B | flood | 256 | 4 | 3 (final) | V8 canary 0.016 CPU-s/s > 1.2 x canary_max 0.010 |
-| bench_B_flood_256_5.log | B | flood | 256 | 5 | 3 (final) | V8 canary 0.016 CPU-s/s > 1.2 x canary_max 0.010 |
 | bench_A_flood_256_1_a1.log | A | flood | 256 | 1 | 1 (re-run follows) | V8 canary 0.020 CPU-s/s > 1.2 x canary_max 0.010 |
 | bench_A_flood_256_1_a2.log | A | flood | 256 | 1 | 2 (re-run follows) | V8 canary 0.016 CPU-s/s > 1.2 x canary_max 0.010 |
 | bench_A_flood_256_2_a1.log | A | flood | 256 | 2 | 1 (re-run follows) | V8 canary 0.016 CPU-s/s > 1.2 x canary_max 0.010 |
@@ -62,8 +55,8 @@ Every measured run that failed a pre-declared validity rule (V1-V8, V5'a-e; docs
 
 Config-level steal rule (V7): runs excluded for steal > 5% / measured runs per config:
 
-- A: 0 / 35
-- B: 0 / 35
-- C: 0 / 5
+- A: 0 / 30
+- B: 0 / 30
+- C: 0 / 0
 - D: 0 / 15
 - E: 0 / 15

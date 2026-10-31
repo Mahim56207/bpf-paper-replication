@@ -8,7 +8,7 @@ Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the t
 
 A-over-D slope -4.42 ns/byte, 95% CI [-9.19, 0.35] (excludes 0: False); B-over-D slope -2.15 ns/byte, 95% CI [-6.95, 2.66] (includes 0: True); CIs non-overlapping: False. Root cause: A's slope CI includes 0: no detectable size dependence for the copy-then-filter config; the two slope CIs overlap. D floor slope -0.0119 ns/byte (net).
 
-Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 55 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
 
 ## C3 accept-all: slope and fixed cost, A vs B (R-C3)
 
@@ -16,7 +16,7 @@ Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 55 exclude
 
 slope A -0.976 [-7.35, 5.39], slope B 1.39 [-4.31, 7.09] ns/byte; slope diff A - B = -2.37, 95% CI [-10.9, 6.18]; intercept diff A - B = 2.01e+03 ns/pkt, 95% CI [-5.27e+03, 9.3e+03]. Root cause: slope difference (A - B) CI does not lie above 0; intercept difference (A - B) CI does not lie above 0.
 
-Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition for config B'. Exclusions: 55 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition for config B'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
 
 ## C4 flood: matched-pps ceiling and CPU per matched packet, A vs B (R-C4)
 
@@ -24,7 +24,7 @@ Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition
 
 not enough valid flood runs for A and B
 
-Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 55 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
 
 ## Notes
 
