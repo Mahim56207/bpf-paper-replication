@@ -58,7 +58,11 @@ IDLE_RATE=$(python3 -c "
 import json
 d = json.load(open('results/baseline_calibration.json'))
 print(f\"Idle rate: {d['idle_rate_mean']:.3f} CPU-s/s (quiet calibration was 0.131)\")
-print(f\"Canary max: {d['canary_max']:.4f}\")
+c_max = d['canary_max']
+if isinstance(c_max, dict):
+    print(f\"Canary max (cores 0,1): {c_max.get('01', 0):.4f}, (core 0): {c_max.get('0', 0):.4f}\")
+else:
+    print(f\"Canary max: {c_max:.4f}\")
 if d['idle_rate_mean'] > 0.3:
     print('WARNING: Machine is still noisy! Consider waiting longer or killing more processes.')
 ")
