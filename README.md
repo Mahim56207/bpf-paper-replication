@@ -54,7 +54,7 @@ sudo bash scripts/phase1_setup.sh
 - [x] Phase 8.0: C1 repeated on the aarch64 VM with amendment A3 (evaluator-only instruction counts), outputs in `logs/p8/a3/`
 - [x] Phase 8.1: quiet measurement setup (`results/p8_1_findings.md`)
 - [x] Phase 8.2: sender-bottleneck test with a no-capture control (`results/p8_2_findings.md`)
-- [ ] Phase 8.3: not run (planned repeat for C2 and C3, which stay MIXED and INCONCLUSIVE)
+- [x] Phase 8.3: quiet repeat for C2 and C3 with settled machine baseline
 - [x] Phase 8.4: validation of the V8 noise rule (`results/p8_4_findings.md`)
 - [x] Phase 8.7: `REPORT.md`, `README.md` and `results/comparison.md` brought up to date (`scripts/build_report.py`, `scripts/p8_7_verify.sh`)
 
