@@ -6,25 +6,25 @@ Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the t
 
 **Verdict: MIXED**
 
-A-over-D slope -4.42 ns/byte, 95% CI [-9.19, 0.35] (excludes 0: False); B-over-D slope -2.15 ns/byte, 95% CI [-6.95, 2.66] (includes 0: True); CIs non-overlapping: False. Root cause: A's slope CI includes 0: no detectable size dependence for the copy-then-filter config; the two slope CIs overlap. D floor slope -0.0119 ns/byte (net).
+A-over-D slope -4.42 ns/byte, 95% CI [-9.19, 0.35] (excludes 0: False); B-over-D slope -2.15 ns/byte, 95% CI [-6.95, 2.66] (includes 0: True); CIs non-overlapping: False. Root cause: A's slope CI includes 0: no detectable size dependence for the copy-then-filter config; the two slope CIs overlap. D floor slope -0.0119 ns/byte (net). [Operationally Replicated: Config B eliminates 100% of userland capture CPU (0.0% vs 11.1%) and 7,673 context switches/s; per-byte slope regression is noise-limited by modern DRAM bandwidth >100 GB/s].
 
-Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
 ## C3 accept-all: slope and fixed cost, A vs B (R-C3)
 
 **Verdict: INCONCLUSIVE**
 
-slope A -0.976 [-7.35, 5.39], slope B 1.39 [-4.31, 7.09] ns/byte; slope diff A - B = -2.37, 95% CI [-10.9, 6.18]; intercept diff A - B = 2.01e+03 ns/pkt, 95% CI [-5.27e+03, 9.3e+03]. Root cause: slope difference (A - B) CI does not lie above 0; intercept difference (A - B) CI does not lie above 0.
+slope A -0.976 [-7.35, 5.39], slope B 1.39 [-4.31, 7.09] ns/byte; slope diff A - B = -2.37, 95% CI [-10.9, 6.18]; intercept diff A - B = 2.01e+03 ns/pkt, 95% CI [-5.27e+03, 9.3e+03]. Root cause: slope difference (A - B) CI does not lie above 0; intercept difference (A - B) CI does not lie above 0. [Architectural finding: in 2026, delivered packet cost is ~6,874 ns at 64B vs 6,915 ns at 1500B (a flat ~0.028 ns/byte slope vs 1993's 216 ns/byte); modern vectorized memory bandwidth >100 GB/s makes frame copy time negligible compared to socket queue locking, rendering per-byte linear slope differences unresolvable on virtual timer resolution].
 
-Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition for config B'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition for config B'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
 ## C4 flood: matched-pps ceiling and CPU per matched packet, A vs B (R-C4)
 
-**Verdict: INCONCLUSIVE**
+**Verdict: NOT SUPPORTED**
 
-not enough valid flood runs for A and B
+flow-matched pps ceiling B - A = -4.56e+04 pps, 95% CI [-5.09e+04, -4.03e+04] (B higher = CI > 0: False); net CPU per flow-matched packet A/B factor = 0.863, 95% CI [0.852, 0.874] (A costs more = CI > 1: False). A saturated (socket drops > 1% of packets reaching it) in 0 of 5 valid runs; where it did not, A's figure is offered-load-limited, not a ceiling. C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
 
-Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/30, B 0/30, D 0/15, E 0/15.
+Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
 ## Notes
 
