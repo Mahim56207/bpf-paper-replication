@@ -53,6 +53,26 @@ Every measured run that failed a pre-declared validity rule (V1-V8, V5'a-e; docs
 | bench_E_m_64_3_a1.log | E | m | 64 | 3 | 1 (re-run follows) | V8 canary 0.019 CPU-s/s > 1.2 x canary_max 0.015 |
 | bench_E_m_64_3_a2.log | E | m | 64 | 3 | 2 (re-run follows) | V8 canary 0.018 CPU-s/s > 1.2 x canary_max 0.015 |
 
+Flood runs that are valid only because of the post hoc flood V8 floor of 0.035 CPU-s/s (D8.22), 15 runs; without the floor (frozen V8 rule) they are excluded:
+
+| file | cfg | rep | canary rate (CPU-s/s) | limit without floor | limit with floor |
+|---|---|---|---|---|---|
+| bench_A_flood_256_1.log | A | 1 | 0.024 | 0.012 | 0.042 |
+| bench_A_flood_256_2.log | A | 2 | 0.028 | 0.012 | 0.042 |
+| bench_A_flood_256_3.log | A | 3 | 0.033 | 0.012 | 0.042 |
+| bench_A_flood_256_4.log | A | 4 | 0.034 | 0.012 | 0.042 |
+| bench_A_flood_256_5.log | A | 5 | 0.037 | 0.012 | 0.042 |
+| bench_B_flood_256_1.log | B | 1 | 0.034 | 0.012 | 0.042 |
+| bench_B_flood_256_2.log | B | 2 | 0.031 | 0.012 | 0.042 |
+| bench_B_flood_256_3.log | B | 3 | 0.034 | 0.012 | 0.042 |
+| bench_B_flood_256_4.log | B | 4 | 0.033 | 0.012 | 0.042 |
+| bench_B_flood_256_5.log | B | 5 | 0.034 | 0.012 | 0.042 |
+| bench_C_flood_256_1.log | C | 1 | 0.016 | 0.012 | 0.042 |
+| bench_C_flood_256_2.log | C | 2 | 0.018 | 0.012 | 0.042 |
+| bench_C_flood_256_3.log | C | 3 | 0.020 | 0.012 | 0.042 |
+| bench_C_flood_256_4.log | C | 4 | 0.015 | 0.012 | 0.042 |
+| bench_C_flood_256_5.log | C | 5 | 0.016 | 0.012 | 0.042 |
+
 Config-level steal rule (V7): runs excluded for steal > 5% / measured runs per config:
 
 - A: 0 / 35

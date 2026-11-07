@@ -6,7 +6,7 @@ Computed by scripts/summarize.py from logs/bench_*.log; each verdict cites the t
 
 **Verdict: MIXED**
 
-A-over-D slope -4.42 ns/byte, 95% CI [-9.19, 0.35] (excludes 0: False); B-over-D slope -2.15 ns/byte, 95% CI [-6.95, 2.66] (includes 0: True); CIs non-overlapping: False. Root cause: A's slope CI includes 0: no detectable size dependence for the copy-then-filter config; the two slope CIs overlap. D floor slope -0.0119 ns/byte (net). [Operationally Replicated: Config B eliminates 100% of userland capture CPU (0.0% vs 11.1%) and 7,673 context switches/s; per-byte slope regression is noise-limited by modern DRAM bandwidth >100 GB/s].
+A-over-D slope -4.42 ns/byte, 95% CI [-9.19, 0.35] (excludes 0: False); B-over-D slope -2.15 ns/byte, 95% CI [-6.95, 2.66] (includes 0: True); CIs non-overlapping: False. Root cause: A's slope CI includes 0: no detectable size dependence for the copy-then-filter config; the two slope CIs overlap. D floor slope -0.0119 ns/byte (net). Descriptive, not part of the rule (means over the valid reject-curve runs of all sizes): capture-process CPU A 11.1 (n=15), B 0.0 (n=15) % of one CPU; capture-process context switches A 7654 (n=15), B 1 (n=15) per s.
 
 Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
@@ -14,21 +14,31 @@ Tables: see `results/summary.md` sections 'Reject curve'. Exclusions: 48 exclude
 
 **Verdict: INCONCLUSIVE**
 
-slope A -0.976 [-7.35, 5.39], slope B 1.39 [-4.31, 7.09] ns/byte; slope diff A - B = -2.37, 95% CI [-10.9, 6.18]; intercept diff A - B = 2.01e+03 ns/pkt, 95% CI [-5.27e+03, 9.3e+03]. Root cause: slope difference (A - B) CI does not lie above 0; intercept difference (A - B) CI does not lie above 0. [Architectural finding: in 2026, delivered packet cost is ~6,874 ns at 64B vs 6,915 ns at 1500B (a flat ~0.028 ns/byte slope vs 1993's 216 ns/byte); modern vectorized memory bandwidth >100 GB/s makes frame copy time negligible compared to socket queue locking, rendering per-byte linear slope differences unresolvable on virtual timer resolution].
+slope A -0.976 [-7.35, 5.39], slope B 1.39 [-4.31, 7.09] ns/byte; slope diff A - B = -2.37, 95% CI [-10.9, 6.18]; intercept diff A - B = 2.01e+03 ns/pkt, 95% CI [-5.27e+03, 9.3e+03]. Root cause: slope difference (A - B) CI does not lie above 0; intercept difference (A - B) CI does not lie above 0. EXPLORATORY, not part of R-C3 (the 1993 slopes are BPF 148 and NIT 216 ns/byte, paper.txt L186-189 and L208): upper bound of the 95% slope interval A 5.39 ns/byte, B 7.09 ns/byte; as a fraction of the 1993 BPF slope A 0.0365, B 0.0479; as a fraction of the 1993 NIT slope A 0.025, B 0.0328.
 
 Tables: see `results/summary.md` sections 'Accept curve' and 'Cost decomposition for config B'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
 ## C4 flood: matched-pps ceiling and CPU per matched packet, A vs B (R-C4)
 
-**Verdict: NOT SUPPORTED**
+**Verdict: INCONCLUSIVE** (frozen V8 rule, no floor)
 
-flow-matched pps ceiling B - A = -4.56e+04 pps, 95% CI [-5.09e+04, -4.03e+04] (B higher = CI > 0: False); net CPU per flow-matched packet A/B factor = 0.863, 95% CI [0.852, 0.874] (A costs more = CI > 1: False). A saturated (socket drops > 1% of packets reaching it) in 0 of 5 valid runs; where it did not, A's figure is offered-load-limited, not a ceiling. C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
+not enough valid flood runs for A and B (frozen V8 rule, no floor: valid A 0, B 0, C 0; at least 2 needed)
+
+**Sensitivity analysis, post hoc and uncalibrated flood V8 floor of 0.035 CPU-s/s (D8.22): NOT SUPPORTED**
+
+flow-matched pps ceiling B - A = -4.56e+04 pps, 95% CI [-5.09e+04, -4.03e+04] (B higher = CI > 0: False); net CPU per flow-matched packet A/B factor = 0.863, 95% CI [0.852, 0.874] (A costs more = CI > 1: False). A saturated (socket drops > 1% of packets reaching it) in 0 of 5 valid runs; where it did not, A's figure is offered-load-limited, not a ceiling. Offered pps (mean of the valid runs): A 653245 (n=5), B 765540 (n=5), C 1026697 (n=5). The label concerns the receiver-drop reading of C4 (NOT SUPPORTED as a receiver-drop claim); C4's CSPF ratio is not tested end to end (D6.1 item 5).
+
+**Phase 6 (noisy session) for comparison: NOT SUPPORTED**
+
+Phase 6 matrix, noisy session run_1792350994 (results/phase6_noisy/): valid flood runs A 4, B 4, C 4; label as computed at that time.
 
 Tables: see `results/summary.md` sections 'Flood (C4)'. Exclusions: 48 excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: A 0/35, B 0/35, C 0/5, D 0/15, E 0/15.
 
 ## Notes
 
-**D6.13.** Initial session idle windows were contaminated by startup noise (0.030 CPU-s/s). V8 correctly caught this for active runs, but idle runs lacked V8. C4 CPU-per-packet recalculated using the quiet calibration idle baseline (0.044 CPU-s/s) to ensure validity. C2/C3 slope verdicts are mathematically invariant to this constant offset (the labels are unchanged between the two baselines; the numbers move in the third digit because the per-packet offset depends slightly on each run's offered rate; the session-idle version is kept in results/session_idle_baseline/).
+**Idle baseline (computed).** Session idle windows: 0.030 CPU-s/s; calibration baseline in results/baseline_calibration.json: 0.044 CPU-s/s; the net CPU of this summary subtracts 0.030 CPU-s/s (session idle windows).
 
-**D6.14.** Matrix revealed that at >600k pps, the sender's generation context becomes the limiting factor, masking receiver-side drop behavior. This is a valid modern architectural finding. C4: NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.
+**Flood V8 policies (computed).** Headline: the frozen rule (limit 1.2 x canary_max of the baseline file). Sensitivity analysis: canary_max raised to at least 0.035 CPU-s/s for flood runs, post hoc and without a calibration record (DEVIATIONS D8.22). Runs valid only because of the floor: 15.
+
+The reviewer rulings D6.13 and D6.14 of the Phase 6 matrix are quoted in results/phase6_noisy/verdicts.md; they are statements about that matrix, not about this run.
 

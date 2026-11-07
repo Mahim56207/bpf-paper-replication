@@ -40,6 +40,12 @@ STREAMS = {"m": [4040], "warmup": [4040], "env": [4040], "nm": [5050], "cal": [5
 # ---- addendum A2 (section 2) --------------------------------------------------------------------
 CANARY_FACTOR = 1.2           # V8: contaminated if canary rate > canary_max x 1.2
 CANARY_CORES = {"default": (0, 1), "flood": (0,)}
+# Flood-run V8 floor (D8.22). POST HOC and NOT CALIBRATED: no file of this repository records a calibration of 0.035 CPU-s/s; it first appears in
+# commit 2d28bfd. Every flood result is computed twice, with the floor (canary_max := max(FLOOD_CANARY_FLOOR, canary_max)) and without it
+# (the frozen rule: canary_max from results/baseline_calibration.json), and both are reported.
+FLOOD_CANARY_FLOOR = 0.035
+# 1993 slopes in ns/byte, used only in the exploratory C3 statement: BPF 148 and NIT 216 (CLAIMS.md C3; paper.txt L186-189 and L208).
+PAPER_SLOPE_BPF, PAPER_SLOPE_NIT = 148, 216
 KNEE_EXPECT = {64: 8000, 1500: 2000}   # release condition (a): the knee to reproduce
 CLASSES_CURVE = ("nm", "m")
 # two-sided 95% Student t critical values for df = 1..30 (statistical constants); df > 30 uses 1.96
@@ -294,15 +300,17 @@ def parse_run(path):
                 r["reasons"].append(f"V5'd X={r['cls_X_run']} > B_max {b_max} + {X_SLACK}")
     if r.get("steal_pct") is not None and r["steal_pct"] > STEAL_MAX_PCT:
         r["reasons"].append(f"V7 steal {r['steal_pct']:.1f}% > {STEAL_MAX_PCT:g}%")
+    r["reasons_nofloor"] = list(r["reasons"])          # V8 is the only rule that differs between the two flood policies
     if r["traffic"] in ("nm", "m", "flood") and r.get("canary_rate") is not None:
         base = load_baseline()
         if base:
             cmax = base["canary_max"][r["canary_set"]]
-            # For high-throughput flood (>700k pps), apply the calibrated flood softirq floor (0.035 CPU-s/s)
-            if r["traffic"] == "flood":
-                cmax = max(0.035, cmax)
-            if r["canary_rate"] > cmax * CANARY_FACTOR:
-                r["reasons"].append(f"V8 canary {r['canary_rate']:.3f} CPU-s/s > {CANARY_FACTOR} x canary_max {cmax:.3f}")
+            for floor_on in (False, True):
+                cm = max(FLOOD_CANARY_FLOOR, cmax) if (floor_on and r["traffic"] == "flood") else cmax
+                if r["canary_rate"] > cm * CANARY_FACTOR:
+                    (r["reasons"] if floor_on else r["reasons_nofloor"]).append(
+                        f"V8 canary {r['canary_rate']:.3f} CPU-s/s > {CANARY_FACTOR} x canary_max {cm:.3f}")
+    r["valid_nofloor"] = not r["reasons_nofloor"]
     r["valid"] = not r["reasons"]
     return r
 
@@ -585,6 +593,15 @@ def main():
         ex.append(f"| {r['file']} | {r['cfg']} | {r['traffic']} | {r['size']} | {r['rep']} | {r['attempt']} (re-run follows) | {'; '.join(r['reasons']) or '(no rule recorded; classified contaminated at run time)'} |")
     if n_ex == 0:
         ex.append("| (none) | | | | | | |")
+    rescued = [r for r in measured if r["valid"] and not r["valid_nofloor"]]
+    ex += ["", f"Flood runs that are valid only because of the post hoc flood V8 floor of {FLOOD_CANARY_FLOOR} CPU-s/s (D8.22), {len(rescued)} runs; "
+           "without the floor (frozen V8 rule) they are excluded:", "", "| file | cfg | rep | canary rate (CPU-s/s) | limit without floor | limit with floor |", "|---|---|---|---|---|---|"]
+    bl_ = load_baseline()
+    for r in rescued:
+        cm0 = bl_["canary_max"][r["canary_set"]] if bl_ else float("nan")
+        ex.append(f"| {r['file']} | {r['cfg']} | {r['rep']} | {r['canary_rate']:.3f} | {CANARY_FACTOR * cm0:.3f} | {CANARY_FACTOR * max(FLOOD_CANARY_FLOOR, cm0):.3f} |")
+    if not rescued:
+        ex.append("| (none) | | | | | |")
     ex += ["", "Config-level steal rule (V7): runs excluded for steal > %g%% / measured runs per config:" % STEAL_MAX_PCT, ""]
     for cfg, (k, n, bad) in cfg_steal.items():
         ex.append(f"- {cfg}: {k} / {n}" + (" -> **config INCONCLUSIVE** (> %d%%)" % round(100 * STEAL_CONFIG_EXCL_MAX) if bad else ""))
@@ -595,11 +612,11 @@ def main():
           "CPU is system-wide (sum over all CPUs of user+nice+system+irq+softirq+steal). **Net** = raw - idle baseline x window (M1; idle baseline "
           + (f"{idle_rate:.3f} CPU-s per s from {len(idle)} idle windows of the " + ("calibration session (D6.13)" if idle_src == "calibration" else "matrix session") if idle_rate is not None else "NOT AVAILABLE") +
           "); headline numbers use net. Matched counts are flow-scoped (M2). D is a floor, not a paper control. Intervals are 95% (Student t).", ""]
-    md += ["## Validity", "", "| cfg | traffic | size | runs | valid | rules failed |", "|---|---|---|---|---|---|"]
+    md += ["## Validity", "", "| cfg | traffic | size | runs | valid | valid without flood V8 floor | rules failed |", "|---|---|---|---|---|---|---|"]
     for k in sorted({(r["cfg"], r["traffic"], r["size"]) for r in measured}, key=lambda k: (k[1], k[0], k[2])):
         allr = [r for r in measured if (r["cfg"], r["traffic"], r["size"]) == k]
         why = sorted({x.split(" ")[0] for r in allr if not r["valid"] for x in r["reasons"]})
-        md.append(f"| {k[0]} | {k[1]} | {k[2]} | {len(allr)} | {sum(r['valid'] for r in allr)} | {', '.join(why) or '-'} |")
+        md.append(f"| {k[0]} | {k[1]} | {k[2]} | {len(allr)} | {sum(r['valid'] for r in allr)} | {sum(r['valid_nofloor'] for r in allr)} | {', '.join(why) or '-'} |")
     for c in sorted(bad_cfg):
         md.append(f"\nConfig {c}: INCONCLUSIVE ({cfg_steal[c][0]} of {cfg_steal[c][1]} runs excluded for steal time).")
 
@@ -700,26 +717,46 @@ def main():
                 cells.append("INCONCLUSIVE")
         md.append(f"| {size} | {cells[0]} | {cells[1]} |")
 
-    # ---------------- flood
-    md += ["", "## Flood (C4): full-rate UDP, matching + noise streams", "",
-           "| cfg | offered pps | flow-matched pps (ceiling) | raw matched pps | net CPU ns / flow-matched pkt | raw CPU ns / flow-matched pkt | capture-proc CPU % | proc cs/s | sys cs/s | filter drops (slot0) | socket drops |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
-    fl = {}
-    for cfg in "ABC":
-        g = [] if cfg in bad_cfg else [r for r in measured if r["valid"] and r["cfg"] == cfg and r["traffic"] == "flood"]
-        fl[cfg] = g
-        if len(g) < MIN_VALID_REPS:
-            md.append(f"| {cfg} | INCONCLUSIVE (valid reps {len(g)} < {MIN_VALID_REPS}) | | | | | | | | | |")
-            continue
-        md.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
-            cfg, fmt(*ms([r.get("offered_pps") for r in g]), 0), fmt(*ms([r.get("matched_pps") for r in g]), 0),
-            fmt(*ms([r.get("matched_raw_pps") for r in g]), 0), fmt(*ms([r.get("net_per_matched_ns") for r in g]), 0),
-            fmt(*ms([r.get("cost_per_matched_ns") for r in g]), 0), fmt(*ms([r.get("proc_cpu_pct") for r in g]), 1),
-            fmt(*ms([r.get("proc_cs_per_s") for r in g]), 0), fmt(*ms([r.get("sys_cs_per_s") for r in g]), 0),
-            fmt(*ms([r.get("filter_dropped") for r in g]), 0), fmt(*ms([r.get("kernel_drops") for r in g]), 0)))
+    # ---------------- flood (computed twice: with and without the post hoc V8 floor, D8.22)
+    def flood_group(valid_key):
+        return {cfg: ([] if cfg in bad_cfg else [r for r in measured if r[valid_key] and r["cfg"] == cfg and r["traffic"] == "flood"]) for cfg in "ABC"}
+
+    def flood_table(fl_, title):
+        out = ["", title, "",
+               "| cfg | offered pps | flow-matched pps (ceiling) | raw matched pps | net CPU ns / flow-matched pkt | raw CPU ns / flow-matched pkt | capture-proc CPU % | proc cs/s | sys cs/s | filter drops (slot0) | socket drops |",
+               "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for cfg in "ABC":
+            g = fl_[cfg]
+            if len(g) < MIN_VALID_REPS:
+                out.append(f"| {cfg} | INCONCLUSIVE (valid reps {len(g)} < {MIN_VALID_REPS}) | | | | | | | | | |")
+                continue
+            out.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                cfg, fmt(*ms([r.get("offered_pps") for r in g]), 0), fmt(*ms([r.get("matched_pps") for r in g]), 0),
+                fmt(*ms([r.get("matched_raw_pps") for r in g]), 0), fmt(*ms([r.get("net_per_matched_ns") for r in g]), 0),
+                fmt(*ms([r.get("cost_per_matched_ns") for r in g]), 0), fmt(*ms([r.get("proc_cpu_pct") for r in g]), 1),
+                fmt(*ms([r.get("proc_cs_per_s") for r in g]), 0), fmt(*ms([r.get("sys_cs_per_s") for r in g]), 0),
+                fmt(*ms([r.get("filter_dropped") for r in g]), 0), fmt(*ms([r.get("kernel_drops") for r in g]), 0)))
+        return out
+
+    fl = flood_group("valid")
+    fl_nf = flood_group("valid_nofloor")
+    md += flood_table(fl_nf, "## Flood (C4): full-rate UDP, matching + noise streams, frozen V8 rule (canary_max from results/baseline_calibration.json x 1.2); headline")
+    md += flood_table(fl, f"## Flood (C4) with the post hoc flood V8 floor of {FLOOD_CANARY_FLOOR} CPU-s/s (D8.22): sensitivity analysis, not calibrated")
 
     # ---------------- verdicts
     V = {}
+
+    def proc_stats(traffic):
+        """Descriptive statement computed from the valid runs (not part of any verdict rule): capture-process CPU and process context switches, A against B."""
+        out = []
+        for key, label, unit, dig in (("proc_cpu_pct", "capture-process CPU", "% of one CPU", 1), ("proc_cs_per_s", "capture-process context switches", "per s", 0)):
+            vals = {}
+            for cfg in "AB":
+                m_ = ms([r.get(key) for r in measured if r["valid"] and r["cfg"] == cfg and r["traffic"] == traffic and cfg not in bad_cfg])
+                vals[cfg] = m_
+            if all(vals[c][2] for c in "AB"):
+                out.append(f"{label} A {vals['A'][0]:.{dig}f} (n={vals['A'][2]}), B {vals['B'][0]:.{dig}f} (n={vals['B'][2]}) {unit}")
+        return (" Descriptive, not part of the rule (means over the valid " + {"nm": "reject-curve"}.get(traffic, traffic) + " runs of all sizes): " + "; ".join(out) + ".") if out else ""
     # R-C2
     fa, fb, fd = fits["nm_over_D"].get("A"), fits["nm_over_D"].get("B"), fits["nm"].get("D")
     if idle_rate is None:
@@ -740,7 +777,7 @@ def main():
                    f"B-over-D slope {f3(fb['slope'])} ns/byte, 95% CI [{f3(b_lo)}, {f3(b_hi)}] (includes 0: {b_incl}); CIs non-overlapping: {disjoint}."
                    + ("" if not why else " Root cause: " + "; ".join(why) + ".")
                    + (f" D floor slope {f3(fd['slope'])} ns/byte (net)." if fd else "")
-                   + " [Operationally Replicated: Config B eliminates 100% of userland capture CPU (0.0% vs 11.1%) and 7,673 context switches/s; per-byte slope regression is noise-limited by modern DRAM bandwidth >100 GB/s].")
+                   + proc_stats("nm"))
     else:
         V["C2"] = ("INCONCLUSIVE", "not enough valid points for the A-over-D and B-over-D fits")
     # R-C3
@@ -761,34 +798,47 @@ def main():
                    f"slope A {f3(ma_['slope'])} [{f3(slope_ci(ma_)[0])}, {f3(slope_ci(ma_)[1])}], slope B {f3(mb_['slope'])} [{f3(slope_ci(mb_)[0])}, {f3(slope_ci(mb_)[1])}] ns/byte; "
                    f"slope diff A - B = {f3(sl[1])}, 95% CI [{f3(sl[0])}, {f3(sl[2])}]; intercept diff A - B = {f3(ic[1])} ns/pkt, 95% CI [{f3(ic[0])}, {f3(ic[2])}]."
                    + ("" if not why else " Root cause: " + "; ".join(why) + ".")
-                   + " [Architectural finding: in 2026, delivered packet cost is ~6,874 ns at 64B vs 6,915 ns at 1500B (a flat ~0.028 ns/byte slope vs 1993's 216 ns/byte); modern vectorized memory bandwidth >100 GB/s makes frame copy time negligible compared to socket queue locking, rendering per-byte linear slope differences unresolvable on virtual timer resolution].")
+                   + f" EXPLORATORY, not part of R-C3 (the 1993 slopes are BPF {PAPER_SLOPE_BPF} and NIT {PAPER_SLOPE_NIT} ns/byte, paper.txt L186-189 and L208): "
+                   f"upper bound of the 95% slope interval A {f3(slope_ci(ma_)[1])} ns/byte, B {f3(slope_ci(mb_)[1])} ns/byte; "
+                   f"as a fraction of the 1993 BPF slope A {f3(slope_ci(ma_)[1] / PAPER_SLOPE_BPF)}, B {f3(slope_ci(mb_)[1] / PAPER_SLOPE_BPF)}; "
+                   f"as a fraction of the 1993 NIT slope A {f3(slope_ci(ma_)[1] / PAPER_SLOPE_NIT)}, B {f3(slope_ci(mb_)[1] / PAPER_SLOPE_NIT)}.")
     else:
         V["C3"] = ("INCONCLUSIVE", "not enough valid points for the A and B fits")
-    # R-C4
-    if idle_rate is None:
-        V["C4"] = ("INCONCLUSIVE", "no idle baseline: net CPU unavailable")
-    elif len(fl["A"]) >= MIN_VALID_REPS and len(fl["B"]) >= MIN_VALID_REPS:
-        pa, pb = ms([r.get("matched_pps") for r in fl["A"]]), ms([r.get("matched_pps") for r in fl["B"]])
-        ca, cb = ms([r.get("net_per_matched_ns") for r in fl["A"]]), ms([r.get("net_per_matched_ns") for r in fl["B"]])
+    # R-C4 (computed for both flood policies; the headline V["C4"] is the frozen V8 rule, V["C4_floor"] is the post hoc floor of commit 2d28bfd, D8.22)
+    def c4_verdict(fl_, tag):
+        if idle_rate is None:
+            return ("INCONCLUSIVE", "no idle baseline: net CPU unavailable")
+        if not (len(fl_["A"]) >= MIN_VALID_REPS and len(fl_["B"]) >= MIN_VALID_REPS):
+            return ("INCONCLUSIVE", f"not enough valid flood runs for A and B ({tag}: valid A {len(fl_['A'])}, B {len(fl_['B'])}, C {len(fl_['C'])}; at least {MIN_VALID_REPS} needed)")
+        pa, pb = ms([r.get("matched_pps") for r in fl_["A"]]), ms([r.get("matched_pps") for r in fl_["B"]])
+        ca, cb = ms([r.get("net_per_matched_ns") for r in fl_["A"]]), ms([r.get("net_per_matched_ns") for r in fl_["B"]])
         dci, rci = welch_diff_ci(pb, pa), ratio_ci(ca, cb)
-        sat = [r for r in fl["A"] if r.get("kernel_packets") and r["kernel_drops"] > 0.01 * r["kernel_packets"]]
-        if dci and rci:
-            ceil_ok, cpu_ok = dci[0] > 0, rci[0] > 1
-            V["C4"] = ("SUPPORTED" if ceil_ok and cpu_ok else ("NOT SUPPORTED" if not (ceil_ok or cpu_ok) else "MIXED"),
-                       f"flow-matched pps ceiling B - A = {f3(dci[1])} pps, 95% CI [{f3(dci[0])}, {f3(dci[2])}] (B higher = CI > 0: {ceil_ok}); "
-                       f"net CPU per flow-matched packet A/B factor = {f3(rci[1])}, 95% CI [{f3(rci[0])}, {f3(rci[2])}] (A costs more = CI > 1: {cpu_ok}). "
-                       f"A saturated (socket drops > 1% of packets reaching it) in {len(sat)} of {len(fl['A'])} valid runs"
-                       + ("" if len(sat) == len(fl["A"]) else "; where it did not, A's figure is offered-load-limited, not a ceiling") + ". "
-                       "C4's CSPF ratio is not replicated end-to-end (D6.1 item 5). "
-                       "NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.")
-        else:
-            V["C4"] = ("INCONCLUSIVE", "sd undefined (fewer than 2 valid reps)")
-    else:
-        V["C4"] = ("INCONCLUSIVE", "not enough valid flood runs for A and B")
+        sat = [r for r in fl_["A"] if r.get("kernel_packets") and r["kernel_drops"] > 0.01 * r["kernel_packets"]]
+        if not (dci and rci):
+            return ("INCONCLUSIVE", "sd undefined (fewer than 2 valid reps)")
+        ceil_ok, cpu_ok = dci[0] > 0, rci[0] > 1
+        label = "SUPPORTED" if ceil_ok and cpu_ok else ("NOT SUPPORTED" if not (ceil_ok or cpu_ok) else "MIXED")
+        off = {c: ms([r.get("offered_pps") for r in fl_[c]]) for c in "ABC"}
+        return (label,
+                f"flow-matched pps ceiling B - A = {f3(dci[1])} pps, 95% CI [{f3(dci[0])}, {f3(dci[2])}] (B higher = CI > 0: {ceil_ok}); "
+                f"net CPU per flow-matched packet A/B factor = {f3(rci[1])}, 95% CI [{f3(rci[0])}, {f3(rci[2])}] (A costs more = CI > 1: {cpu_ok}). "
+                f"A saturated (socket drops > 1% of packets reaching it) in {len(sat)} of {len(fl_['A'])} valid runs"
+                + ("" if len(sat) == len(fl_["A"]) else "; where it did not, A's figure is offered-load-limited, not a ceiling") + ". "
+                "Offered pps (mean of the valid runs): " + ", ".join(f"{c} {off[c][0]:.0f} (n={off[c][2]})" for c in "ABC" if off[c][2]) + ". "
+                f"The label concerns the receiver-drop reading of C4 ({label} as a receiver-drop claim); C4's CSPF ratio is not tested end to end (D6.1 item 5).")
+
+    V["C4"] = c4_verdict(fl_nf, "frozen V8 rule, no floor")                           # headline: the pre-declared V8 rule
+    V["C4_floor"] = c4_verdict(fl, f"post hoc flood floor {FLOOD_CANARY_FLOOR}")       # sensitivity analysis, post hoc and uncalibrated (D8.22)
+    # Phase 6 matrix (noisy session) for comparison, read from the byte copies in results/phase6_noisy/ (D8.25)
+    p6s, p6r = RESULTS / "phase6_noisy" / "summary.json", RESULTS / "phase6_noisy" / "runs.json"
+    if p6s.exists() and p6r.exists():
+        s6, r6 = json.loads(p6s.read_text()), json.loads(p6r.read_text())
+        n6 = {c: sum(1 for r in r6 if r["session"] == s6["session"] and r["traffic"] == "flood" and r["cfg"] == c and r["valid"] and not re.search(r"_a\d+\.log$", r["file"])) for c in "ABC"}
+        V["C4_phase6"] = (s6["verdicts"]["C4"][0], f"Phase 6 matrix, noisy session {s6['session']} (results/phase6_noisy/): valid flood runs A {n6['A']}, B {n6['B']}, C {n6['C']}; label as computed at that time.")
 
     md += ["", "## Verdicts against the pre-declared rules (R-C2, R-C3 from addendum A2; R-C4 frozen), 95% CIs only", ""]
-    for k in ("C2", "C3", "C4"):
-        md.append(f"- **{k}: {V[k][0]}.** {V[k][1]}")
+    for k in [k_ for k_ in ("C2", "C3", "C4", "C4_floor", "C4_phase6") if k_ in V]:
+        md.append(f"- **{k}: {V[k][0]}.** {V[k][1]}" + (" (frozen V8 rule, no floor; headline)" if k == "C4" else (f" (post hoc V8 floor of {FLOOD_CANARY_FLOOR} CPU-s/s applied, D8.22; sensitivity analysis)" if k == "C4_floor" else (" (comparison, not part of this run)" if k == "C4_phase6" else ""))))
     (RESULTS / "summary.md").write_text("\n".join(md) + "\n")
     (RESULTS / "summary.json").write_text(json.dumps({"session": session, "idle_rate": idle_rate, "verdicts": V, "fits": fits,
                                                       "steal": {c: list(v) for c, v in cfg_steal.items()}}, indent=1, default=list))
@@ -797,20 +847,23 @@ def main():
           "results/exclusions.md. C1 waits for sub-phase 6c. No 1993 absolute number is compared. Final wording per reviewer rulings D6.13 (idle baseline) and D6.14, see Notes below.", ""]
     for k, title in (("C2", "C2 reject-all: in-kernel cost flat vs size; user-space copy-then-filter grows (R-C2)"),
                      ("C3", "C3 accept-all: slope and fixed cost, A vs B (R-C3)"), ("C4", "C4 flood: matched-pps ceiling and CPU per matched packet, A vs B (R-C4)")):
-        vd += [f"## {title}", "", f"**Verdict: {V[k][0]}**", "", V[k][1], "",
+        vd += [f"## {title}", "", f"**Verdict: {V[k][0]}**" + (" (frozen V8 rule, no floor)" if k == "C4" else ""), "", V[k][1], ""]
+        if k == "C4":
+            vd += [f"**Sensitivity analysis, post hoc and uncalibrated flood V8 floor of {FLOOD_CANARY_FLOOR} CPU-s/s (D8.22): {V['C4_floor'][0]}**", "", V["C4_floor"][1], ""]
+            if "C4_phase6" in V:
+                vd += [f"**Phase 6 (noisy session) for comparison: {V['C4_phase6'][0]}**", "", V["C4_phase6"][1], ""]
+        vd += [
                "Tables: see `results/summary.md` sections " + {"C2": "'Reject curve'", "C3": "'Accept curve' and 'Cost decomposition for config B'", "C4": "'Flood (C4)'"}[k]
                + f". Exclusions: {n_ex} excluded runs/attempts in total (`results/exclusions.md`); steal exclusions per config: "
                + ", ".join(f"{c} {v[0]}/{v[1]}" for c, v in cfg_steal.items() if v[1]) + ".", ""]
     bcal = load_baseline()
     vd += ["## Notes", "",
-           "**D6.13.** Initial session idle windows were contaminated by startup noise (" + (f"{session_idle_rate:.3f}" if session_idle_rate is not None else "n/a") +
-           " CPU-s/s). V8 correctly caught this for active runs, but idle runs lacked V8. C4 CPU-per-packet recalculated using the quiet calibration idle baseline (" +
-           (f"{bcal['idle_rate_mean']:.3f}" if bcal else "n/a") + " CPU-s/s) to ensure validity. C2/C3 slope verdicts are mathematically invariant to this constant offset "
-           "(the labels are unchanged between the two baselines; the numbers move in the third digit because the per-packet offset depends slightly on each run's offered rate; "
-           "the session-idle version is kept in results/session_idle_baseline/).", "",
-           "**D6.14.** Matrix revealed that at >600k pps, the sender's generation context becomes the limiting factor, masking receiver-side drop behavior. "
-           "This is a valid modern architectural finding. C4: NOT SUPPORTED as a receiver-drop claim. Reveals a sender-generation bottleneck: offered rates diverge by config "
-           "because the filter/classifier overhead impacts the sending core's capacity. Config A was offered-load-limited, not receiver-saturated.", ""]
+           "**Idle baseline (computed).** Session idle windows: " + (f"{session_idle_rate:.3f}" if session_idle_rate is not None else "n/a") + " CPU-s/s; calibration baseline in "
+           "results/baseline_calibration.json: " + (f"{bcal['idle_rate_mean']:.3f}" if bcal else "n/a") + " CPU-s/s; the net CPU of this summary subtracts "
+           + (f"{idle_rate:.3f}" if idle_rate is not None else "n/a") + " CPU-s/s (" + ("calibration baseline, SUMMARIZE_IDLE_BASELINE=calibration" if idle_src == "calibration" else "session idle windows") + ").", "",
+           f"**Flood V8 policies (computed).** Headline: the frozen rule (limit 1.2 x canary_max of the baseline file). Sensitivity analysis: canary_max raised to at least {FLOOD_CANARY_FLOOR} CPU-s/s for flood runs, "
+           "post hoc and without a calibration record (DEVIATIONS D8.22). Runs valid only because of the floor: " + str(sum(1 for r in measured if r["valid"] and not r["valid_nofloor"])) + ".", "",
+           "The reviewer rulings D6.13 and D6.14 of the Phase 6 matrix are quoted in results/phase6_noisy/verdicts.md; they are statements about that matrix, not about this run.", ""]
     (RESULTS / "verdicts.md").write_text("\n".join(vd) + "\n")
     print(f"session {session}: parsed {len(allruns)} logs ({len(measured)} measured, {sum(r['valid'] for r in measured)} valid, {n_ex} excluded or re-run); wrote results/summary.md, exclusions.md, verdicts.md")
     return 0

@@ -97,8 +97,13 @@ for cid, label in (("C1", c1), ("C2", v["C2"][0]), ("C3", v["C3"][0])):
     ok = ("**" + label) in rows.get(cid, "")
     print("matrix: %s row has label %s: %s" % (cid, label, "PASS" if ok else "FAIL"))
     bad += not ok
-ok = "Phase 8.3 has not been run" in rows.get("C2", "") and "Phase 8.3 has not been run" in rows.get("C3", "")
-print("matrix: C2 and C3 rows say that Phase 8.3 has not been run: %s" % ("PASS" if ok else "FAIL"))
+# Phase 8.3 has been run (commits 2c3126d to 2d28bfd, DEVIATIONS D8.19 to D8.25): the rows must refer to it and must not say it was not run
+ok = all("Phase 8.3" in rows.get(c, "") and "Phase 8.3 has not been run" not in rows.get(c, "") for c in ("C2", "C3"))
+print("matrix: C2 and C3 rows refer to the Phase 8.3 re-run and do not say it was not run: %s" % ("PASS" if ok else "FAIL"))
+bad += not ok
+# C4: the headline is the frozen V8 rule; the floor result must be labelled as a post hoc sensitivity analysis
+ok = ("**" + v["C4"][0] + "**") in rows.get("C4", "") and v["C4_floor"][0] in rows.get("C4", "") and "post hoc" in rows.get("C4", "")
+print("matrix: C4 row has the headline label %s (frozen V8 rule) and names the post hoc floor result %s: %s" % (v["C4"][0], v["C4_floor"][0], "PASS" if ok else "FAIL"))
 bad += not ok
 ok = "C4-S" in rows and "SENDER-LIMITED SUPPORTED" in rows["C4-S"]
 print("matrix: sender-bottleneck row present with its verdict: %s" % ("PASS" if ok else "FAIL"))

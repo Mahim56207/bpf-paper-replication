@@ -20,7 +20,13 @@ miss=0; while read -r f; do git ls-files --error-unmatch "$f" > /dev/null 2>&1 |
 echo "### 3. numbers, stale statements, claims matrix"
 python3 -I scripts/p8_7_check.py; chk $? "p8_7_check.py"
 echo "### 4. scope of the change"
-chg=$(git status --short | grep -vE '^\?\? logs/p8/p8_7/' | grep -vE '^ M (REPORT.md|README.md|results/comparison.md|scripts/build_report.py|DEVIATIONS.md)$|^\?\? scripts/p8_7_' || true)
+# Compares file names only (the staged or unstaged state does not matter). Phase 9 (integrity) also changes summarize.py, the Phase 8.3 result files, the regenerated Phase 8.7 outputs
+# and adds results/phase6_noisy/, logs/p9/ and two scripts; P8_7_SCOPE=phase9 allows them.
+allowed='^(REPORT\.md|README\.md|results/comparison\.md|scripts/build_report\.py|DEVIATIONS\.md)$|^scripts/p8_7_|^logs/p8/p8_7/'
+if [[ "${P8_7_SCOPE:-}" == phase9 ]]; then
+    allowed="$allowed|^results/(summary\.md|summary\.json|verdicts\.md|exclusions\.md|runs\.json)\$|^scripts/(summarize\.py|p8_7_check\.py|p8_7_verify\.sh|demo_c1\.sh|p9_verify\.sh)\$|^results/phase6_noisy/|^logs/p9/"
+fi
+chg=$(git status --short | cut -c4- | grep -vE "$allowed" || true)
 [[ -z "$chg" ]]; chk $? "only REPORT.md, README.md, results/comparison.md, build_report.py and Phase 8.7 files changed: ${chg:-none}"
 echo; echo "p8_7_verify: $fail FAIL"
 exit $((fail>0))
