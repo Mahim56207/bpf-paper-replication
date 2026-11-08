@@ -4,11 +4,26 @@ Replication of McCanne and Jacobson, "The BSD Packet Filter" (USENIX Winter 1993
 
 ## Abstract
 
-The paper's filter design was rebuilt as an eBPF socket filter and measured against a user-space copy-then-filter sniffer on an arm64 virtual machine (6.17.0-19-generic, 5 cores). The eBPF program loads (the verifier accepts it), counts and matches exactly what tcpdump counts, and two deliberately unsafe variants show the verifier rejecting a possibly-null map value and a context read a socket filter may not make while accepting a source-unsafe program it can prove safe. The benchmark matrix (110 plan rows; 105 final measured runs, 105 valid; 27 re-run attempts kept) did not replicate the paper's shape claims cleanly: C2 is MIXED and C3 is INCONCLUSIVE, and C4 is INCONCLUSIVE under the frozen V8 rule (NOT SUPPORTED as a receiver-drop claim if the post hoc, uncalibrated flood V8 floor is applied, D8.22), because at flood rates the sending core's generation capacity, not the receiver, became the limit, and the offered rate itself differed by configuration. Two measurement discoveries shaped the result: a noise-detection rule (V8) built on idle "canary" cores correctly flagged a noisy start of the session, and the idle baseline taken in that noisy phase (0.843 CPU-s/s against 0.131 at calibration, Phase 6) had to be replaced by the quiet calibration baseline (D6.13). C1 (instruction counts, sub-phase 6c and Phase 8.0) is MIXED: the register machine executes fewer instructions than the stack machine for all four filters, but the order of the ratios is not stable across machines and compilers. A control configuration without any capture tap (Phase 8.2) supports the explanation that the flood's offered load is limited by the sender (SENDER-LIMITED SUPPORTED, run set 2). A direct test of the V8 noise rule (Phase 8.4) found that it detects canary-core noise reliably but could not show that it protects the headline metric to a 5% tolerance (premise PARTIAL). The paper's CSPF ratio is not replicated end-to-end.
+The paper's filter design was rebuilt as an eBPF socket filter and measured against a user-space copy-then-filter sniffer on an arm64 virtual machine (6.17.0-19-generic, 5 cores). The eBPF program loads (the verifier accepts it), counts and matches exactly what tcpdump counts, and two deliberately unsafe variants show the verifier rejecting a possibly-null map value and a context read a socket filter may not make while accepting a source-unsafe program it can prove safe. The benchmark matrix (110 plan rows; 105 final measured runs, 105 valid; 27 re-run attempts kept) did not replicate the paper's shape claims cleanly: C2 is MIXED and C3 is INCONCLUSIVE, and C4 is INCONCLUSIVE under the frozen V8 rule (NOT SUPPORTED as a receiver-drop claim if the post hoc, uncalibrated flood V8 floor is applied, D8.22), because at flood rates the sending core's generation capacity, not the receiver, became the limit, and the offered rate itself differed by configuration. Two measurement discoveries shaped the result: a noise-detection rule (V8) built on idle "canary" cores correctly flagged a noisy start of the session, and the idle baseline taken in that noisy phase (0.843 CPU-s/s against 0.131 at calibration, Phase 6) had to be replaced by the quiet calibration baseline (D6.13). C1 (instruction counts, sub-phase 6c and Phase 8.0) is MIXED: the register machine executes fewer instructions than the stack machine for all four filters, but the order of the ratios is not stable across machines and compilers. A control configuration without any capture tap (Phase 8.2) supports the explanation that the flood's offered load is limited by the sender (SENDER-LIMITED SUPPORTED, run set 2). A direct test of the V8 noise rule (Phase 8.4) found that it detects canary-core noise reliably but could not show that it protects the headline metric to a 5% tolerance (premise PARTIAL). The paper's CSPF ratio is not replicated end-to-end. Phase 10 re-measured all five claims under designs that were frozen before the runs, on one machine (kernel 6.17.0-41-generic): C1 BOUNDED (the direction holds in 5 of 6 builds, the ordering of the ratios in only 2), C2 BOUNDED and C3 BOUNDED (microbenchmarks, every slope inside the frozen margin of 10 ns/byte, not end-to-end capture), C4 SUPPORTED (capture-side CPU per matched packet of the user-space sniffer against the eBPF filter at paced rates), the mitigation of the sender confound SUPPORTED with the gap reversed rather than removed (causes UNVERIFIED), and C5 SUPPORTED (the verifier rejects an unbounded loop and accepts a bounded one). The earlier labels of Phases 6 to 9 are kept in the table that follows the final labels; the first microbenchmark run was INCONCLUSIVE because its batches were too short for the canary and is kept as superseded.
 
-## Claims matrix
+## Final labels after Phase 10
 
-| ID | claim (CLAIMS.md) | final verdict | where to look |
+Phase 10 re-measured every claim under designs that were frozen before the runs (`docs/phase10_design.md` and, for C2 and C3, `docs/phase10_wp1b_design.md`; hashes and times logged). One machine only (the aarch64 virtual machine of `ENV.md`, kernel 6.17.0-41-generic; earlier phases ran on a different kernel build, so no earlier number is reused as a baseline here, D10.5). **The labels below are the final ones; the table after them keeps the earlier verdicts of Phases 6 to 9 for the record, and where the two differ the Phase 10 label governs, with the scope stated in the second column.** A label of BOUNDED means an effect is absent or present only inside a declared margin; the margins are mine, flagged for the reviewer (10 ns/byte, 10 percent, 1.10 and 1.25, 0.1 percent).
+
+| claim | label (Phase 10) | what the label rests on (computed from `results/p10_summary.json`) | label before Phase 10 |
+|---|---|---|---|
+| C1 register against stack machine, instructions per packet (Fig. 8) | **BOUNDED** | direction (R above 1 for all four filters) holds in 5 of 6 compiler and optimisation-level builds (fails in: gcc-O0); the ordering R(F1) < R(F2) < R(F3) < R(F4) holds in 2 of 6 (clang-O0, gcc-O2); range of R over the builds: F1 [0.656, 1.48], F2 [1.18, 2.79], F3 [1.15, 2.88], F4 [7.67, 19.1]. Our own interpreters and CSPF programs, not the 1993 code | MIXED (Phases 6c and 8.0) |
+| C2 reject all: in-kernel cost flat in packet size (Fig. 3) | **BOUNDED** | kernel reject slope s_K 0.0005174 ns/byte, 90% interval [-0.0001016, 0.001136]; user-path slope s_U 0.05527 [0.01183, 0.09871]; d = s_U - s_K 0.05476 [0.01131, 0.0982]; all INSIDE the frozen margin of 10 ns/byte (**BOUNDED only means that**; the upper bound of s_U is 0.09871 ns/byte, far below the margin). Microbenchmarks of the in-kernel filter and of the user-space drain path, **not end-to-end capture** | MIXED (Phase 8.3) |
+| C3 accept all: copy slope and fixed cost (Fig. 2) | **BOUNDED** | e = s_U - s_E 0.004678 ns/byte, 90% interval [-0.05815, 0.06751], INSIDE the frozen margin; s_U 0.05527, s_E 0.05059. Same scope: microbenchmarks, not end-to-end capture | INCONCLUSIVE (Phase 8.3) |
+| C4 end-to-end speed-up over NIT and CSPF (as tested here: capture-side CPU per matched packet, A against B, paced) | **SUPPORTED** | rule P9 of `docs/phase10_design.md`: at the paced rates where the label is decided, config A (user-space copy-then-filter) costs more capture-side CPU per flow-matched packet than config B (eBPF filter), ratio and class per rate in the ladder table below (B-CHEAPER at 4 of 5 rates); the drop fraction is bounded below the declared margin at every rate except 600000. **Not the 1993 end-to-end speed-up and not the CSPF ratio** (instruction counts are C1) | INCONCLUSIVE under the frozen V8 rule (Phase 8.3); NOT SUPPORTED with the post hoc floor; NOT SUPPORTED in Phase 6 |
+| C4-mitigation: the sender-side confound of Phase 8.2 is removed when the capture runs on the receiving end with RPS | **SUPPORTED** | the offered-load gap of Phase 8.2 is reversed in the mitigated topology: ratio no-capture over capture in the baseline topology A [1.44, 1.47], B [1.21, 1.23]; in the mitigated topology A [0.899, 0.943], B [0.904, 0.92], below one, so capture attached gave more offered load than no capture. Causes UNVERIFIED | C4-S SENDER-LIMITED SUPPORTED (Phase 8.2) |
+| C5 a safe in-kernel VM makes code to the data practical | **SUPPORTED** | the unbounded loop is rejected by the verifier (exit 255: "infinite loop detected at insn 2") and the loop with a constant bound is accepted (exit 0). The CPU-benefit part of C5 is C2 and C3 above (microbenchmarks only) | MIXED (Phase 8.7) |
+| C2 (WP1 original, superseded) | **INCONCLUSIVE** | short batches of the first Phase 10 run: 169 of 350 final batches invalid; kept alongside, never pooled with WP1b | - |
+| C3 (WP1 original, superseded) | **INCONCLUSIVE** | same data as the row above | - |
+
+## Claims matrix of Phases 6 to 9 (kept for the record)
+
+| ID | claim (CLAIMS.md) | verdict of Phases 6 to 9 (superseded where the Phase 10 table above differs) | where to look |
 |---|---|---|---|
 | C1 | register-based vs stack-based filter machine, instructions per packet (Fig. 8) | **MIXED** (M2, host instructions per packet, primary pairing; x86_64 container, repeated on the aarch64 VM with the same label). Direction holds for all four filters (R above 1), the order of the ratios is not robust across machines, the grid fails in the cells listed under the C1 results (M0 / bpf-raw / sm-sc-fused; Mip / bpf-raw / sm-sc-fused; Mnonip / bpf-raw / sm-sc-fused) on both machines; the measured ratios are for our own interpreters and CSPF programs, not the 1993 code (D6c.3, D6c.4) | `results/c1_verdict.md`, `results/c1_summary.md`, `logs/p8/a3/results/`, `docs/phase6c_design.md`, `DEVIATIONS.md` D6c.1-D6c.4, D8.1-D8.9 |
 | C2 | "reject all": in-kernel filtering cost flat vs packet size (Fig. 3) | **MIXED** (Phase 8.3 quiet re-run) | `results/verdicts.md`, `results/summary.md` (Reject curve), `logs/bench_[ABD]_nm_*.log` |
@@ -26,7 +41,7 @@ Verdict texts (computed by `scripts/summarize.py` from the pre-declared rules, 9
 
 ## Methodology and environment
 
-Testbed (`ENV.md`, `results/topology.md`): kernel 6.17.0-19-generic, aarch64, head -1, libbpf 1.6.2 (headers), bpftool bpftool v7.7.0` / `using libbpf v1.7` / `features:, bpf_jit_enable 1, 5 CPUs, no CPU-frequency governor (virtual machine). Traffic: iperf3 UDP between a veth pair, one end in network namespace `p2ns` (`scripts/lab_up.sh`); the capture process is pinned to core 2, the iperf3 server to core 3, the main client to core 4, the noise client to core 1, core 0 and (outside flood runs) core 1 are the canaries. Configurations: A user-space `baseline_sniffer`; B eBPF filter with a draining loader; C the same without drain; D `reject_all` (floor); E `accept_all`. Each run is 10 s; the matrix is the frozen plan `results/bench_plan.tsv` (seed 20261018) at 16000 offered pps for the curves (K1 redefined, D6.9) and unlimited rate for the flood. A separate always-on classifier tap (identical for every config) splits every frame into data flow, iperf3 control and other, so the conservation rules V5'a-e can be checked on every run (`docs/phase6_addenda.md`). Rules, thresholds and verdict criteria were frozen before any run (`docs/phase6_design.md`, commit 3591267) and changed only by the dated addenda below. The session ran in the graphical desktop (`ENV.md`, D6.9); noise was handled by rule V8 and idle subtraction. Phases: 0 bootstrap and claims; 1 toolchain; 2 user-space baseline; 3 eBPF filter; 4 loader and map reader; 5 verifier stress test; 6 benchmark design, calibration and matrix (6c: C1 instruction counts, run first in an x86_64 container with gcc 13.3.0 and valgrind 3.22.0, D6c.1); 7 report and historical comparison; 8.0 C1 repeated on this VM (gcc 15.2.0, valgrind 3.25.1) with amendment A3; 8.1 quiet measurement setup; 8.2 sender-bottleneck test with a no-capture control; 8.3 quiet re-run for C2 and C3; 8.4 validation of rule V8; 8.7 this update of the report.
+Testbed (`ENV.md`, `results/topology.md`): kernel 6.17.0-19-generic, aarch64, head -1, libbpf 1.6.2 (headers), bpftool bpftool v7.7.0` / `using libbpf v1.7` / `features:, bpf_jit_enable 1, 5 CPUs, no CPU-frequency governor (virtual machine). Traffic: iperf3 UDP between a veth pair, one end in network namespace `p2ns` (`scripts/lab_up.sh`); the capture process is pinned to core 2, the iperf3 server to core 3, the main client to core 4, the noise client to core 1, core 0 and (outside flood runs) core 1 are the canaries. Configurations: A user-space `baseline_sniffer`; B eBPF filter with a draining loader; C the same without drain; D `reject_all` (floor); E `accept_all`. Each run is 10 s; the matrix is the frozen plan `results/bench_plan.tsv` (seed 20261018) at 16000 offered pps for the curves (K1 redefined, D6.9) and unlimited rate for the flood. A separate always-on classifier tap (identical for every config) splits every frame into data flow, iperf3 control and other, so the conservation rules V5'a-e can be checked on every run (`docs/phase6_addenda.md`). Rules, thresholds and verdict criteria were frozen before any run (`docs/phase6_design.md`, commit 3591267) and changed only by the dated addenda below. The session ran in the graphical desktop (`ENV.md`, D6.9); noise was handled by rule V8 and idle subtraction. Phases: 0 bootstrap and claims; 1 toolchain; 2 user-space baseline; 3 eBPF filter; 4 loader and map reader; 5 verifier stress test; 6 benchmark design, calibration and matrix (6c: C1 instruction counts, run first in an x86_64 container with gcc 13.3.0 and valgrind 3.22.0, D6c.1); 7 report and historical comparison; 8.0 C1 repeated on this VM (gcc 15.2.0, valgrind 3.25.1) with amendment A3; 8.1 quiet measurement setup; 8.2 sender-bottleneck test with a no-capture control; 8.3 quiet re-run for C2 and C3; 8.4 validation of rule V8; 8.7 an earlier update of the report; 9 integrity audit of Phase 8.3; 10 hardened re-measurement of C1 to C5 (kernel 6.17.0-41-generic); 11 this update, with the Phase 10 results and labels.
 
 ## Results
 
@@ -253,6 +268,113 @@ Phase 8.2 run set 1 with V8 off, **computed only from surviving derived data** (
 
 So V8 did not change a Phase 6 label, and in Phase 8.2 it kept a contaminated set from giving a different verdict than the clean run set.
 
+### Phase 10: hardened re-measurement of C1 to C5 (`docs/phase10_design.md`, `docs/phase10_wp1b_design.md`, `DEVIATIONS.md` D10.1 to D10.11)
+
+Design frozen and hashed before the runs (`logs/p10/p10_design_sha256.log`, `logs/p10/p10_wp1b_sha256.log`; the second design was logged at 2026-11-08T11:56:28+05:30); one launch per block set, hands-off, with a 60 s settle, a memory gate and a pre-flight idle set per block; one machine. Run by `scripts/p10_run_all.sh` (WP1 to WP4) and `scripts/p10b_run.sh` (WP1b); labels computed by `scripts/p10_summarize.py` from `logs/p10/` and re-derived by `scripts/p10_check_labels.py`; `scripts/p10_verify.sh` reported no failure.
+
+**WP1 and why WP1b exists.** The first run of the microbenchmarks (WP1) was INCONCLUSIVE for C2 and C3: 632 of 813 attempts exceeded the canary limit (0.101804 CPU-s/s over four cores) and 169 of 350 final batches stayed invalid. A read-only diagnosis (`scripts/p10_wp1_diag.py`, `logs/p10/wp1_diag/diag.txt`) showed that the batches were far shorter than the canary can resolve: median tool time 0.0330 s, canary window median 0.096 s and minimum 0.050 s, while one 10 ms tick of `/proc/stat` exceeds the limit in any window shorter than 0.0982 s (441 attempts, 417 failed); a fixed cost of 1.93 ± 0.31 ticks per attempt was fitted. The design had named repetition counts and no minimum duration; that was my omission. Whether the remaining excess is real background load or caused by the measurement itself is UNVERIFIED. WP1b (`docs/phase10_wp1b_design.md`) kept the frozen V8 rule, the margin of 10 ns/byte and the verdict rules and changed only the batch length (at least 5 s), the recorded clocks (wall time and thread CPU time) and the replication (420 planned batches, 420 valid, 0 invalid, 1 re-run attempt, shortest measured wall time 5 s); its pilot (pilot attempts 106, of which canary-contaminated or rc != 0: 1 (fraction 0.009); pilot plan rows with a valid final batch: 105 of 105) was excluded from every verdict.
+
+**Scope of C2 and C3.** WP1b measures the in-kernel filter (`BPF_PROG_TEST_RUN`) and the user-space drain path of an AF_PACKET queue as microbenchmarks. It does not measure end-to-end capture, and it does not include the cost of the capture process outside the drain loop.
+
+C2 and C3 as intervals (ns per byte of frame size, 90% intervals), with the ratio of the 1993 slopes (148 ns/byte for the BPF filter and 216 ns/byte for NIT, paper.txt L186-189 and L208) to the upper bound of each interval. **That ratio compares different measurement paths (a different machine, kernel and code path), not a replication.**
+
+| quantity | estimate (ns/byte) | 90% interval | class (frozen margin 10 ns/byte) | 148 / upper bound | 216 / upper bound |
+|---|---|---|---|---|---|
+| s_K, kernel reject_all (test run) | 0.0005174 | [-0.0001016, 0.001136] | INSIDE | 1.3e+05 | 1.9e+05 |
+| s_U, user-space drain path U | 0.05527 | [0.01183, 0.09871] | INSIDE | 1.5e+03 | 2.19e+03 |
+| d = s_U - s_K (claim C2) | 0.05476 | [0.01131, 0.0982] | INSIDE | 1.51e+03 | 2.2e+03 |
+| s_E, in-kernel accept-all drain path E | 0.05059 | [0.004503, 0.09669] | INSIDE | 1.53e+03 | 2.23e+03 |
+| e = s_U - s_E (claim C3) | 0.004678 | [-0.05815, 0.06751] | INSIDE | 2.19e+03 | 3.2e+03 |
+| s_memcpy, copy floor | 0.01047 | [0.007088, 0.01385] | INSIDE | 1.07e+04 | 1.56e+04 |
+| s_U - s_memcpy (post hoc, descriptive) | 0.04481 | [0.001243, 0.08837] | INSIDE | 1.67e+03 | 2.44e+03 |
+
+The same fits per quantity, wall-based (the label-carrying quantity) and thread-CPU based (sensitivity; same rule, same labels: C2 BOUNDED, C3 BOUNDED):
+
+| quantity | slope, wall (ns/byte) | 90% interval | class | slope, thread CPU | 90% interval | class | n |
+|---|---|---|---|---|---|---|---|
+| memcpy | 0.01047 | [0.007088, 0.01385] | INSIDE | 0.01046 | [0.007086, 0.01384] | INSIDE | 60 |
+| tr_reject | 0.0005174 | [-0.0001016, 0.001136] | INSIDE | 0.0004858 | [-9.677e-05, 0.001068] | INSIDE | 60 |
+| tr_accept | -0.0003757 | [-0.001001, 0.0002499] | INSIDE | -0.0003548 | [-0.0009465, 0.0002369] | INSIDE | 60 |
+| tr_port | -0.0003894 | [-0.001728, 0.0009491] | INSIDE | -0.0003074 | [-0.001559, 0.0009443] | INSIDE | 60 |
+| dr_U | 0.05527 | [0.01183, 0.09871] | INSIDE | 0.05514 | [0.01177, 0.09851] | INSIDE | 60 |
+| dr_E | 0.05059 | [0.004503, 0.09669] | INSIDE | 0.05087 | [0.004614, 0.09712] | INSIDE | 60 |
+| dr_B | 0.04546 | [-0.002467, 0.09339] | INSIDE | 0.04587 | [-0.001806, 0.09354] | INSIDE | 60 |
+
+**Copy floor against the user path (post hoc and descriptive, no label).** The copy-floor slope s_memcpy is 0.01047 ns/byte, 90% interval [0.007088, 0.01385]; the user-path slope s_U is 0.05527 [0.01183, 0.09871]. Their intervals overlap, and the interval of the difference s_U - s_memcpy, 0.04481 [0.001243, 0.08837], excludes zero: the two slopes differ at this precision, both far inside the margin. Why the user path grows faster than a pure copy is not investigated (UNVERIFIED).
+
+**Frozen margin.** delta = 10 ns/byte was kept as frozen and no tighter margin was added. The labels are BOUNDED because every interval lies inside it; the upper bounds of the intervals are 0.09871 ns/byte for s_U and 0.001136 ns/byte for s_K, far below the margin, so BOUNDED here says that the size dependence is excluded above a margin much larger than what was measured, not that it was measured to be that large.
+
+**C4 mitigation test (WP2a): offered load, flood, two topologies.** Topology T0 captures on the sender's side as in Phase 8.2; T1 captures on the receiving end inside the namespace with receive-packet steering to a dedicated core. Mean offered packets per second ± sd (n valid runs; 0 runs excluded; V8 limit 0.03946 CPU-s/s by calibration windows per cell, design amendment A2):
+
+| topology | N (no capture) | A | B | C |
+|---|---|---|---|---|
+| T0 | 420816 ± 4.24e+03 (n=6) | 289496 ± 3.35e+03 (n=6) | 345983 ± 1.85e+03 (n=6) | 415336 ± 2.6e+03 (n=6) |
+| T1 | 776549 ± 7.08e+03 (n=6) | 843340 ± 2.44e+04 (n=6) | 851474 ± 4.26e+03 (n=6) | 808771 ± 1.36e+04 (n=6) |
+
+R is the mean offered load of the no-capture configuration over that of the capture configuration in the same topology; Q = R(T1) / R(T0):
+
+| config | R(T0), baseline [95%] | R(T1), mitigated [95%] | Q = R(T1) / R(T0) [95%] | class (rule P6) |
+|---|---|---|---|---|
+| A | 1.45 [1.44, 1.47] | 0.921 [0.899, 0.943] | 0.633 [0.616, 0.651] | REVERSED |
+| B | 1.22 [1.21, 1.23] | 0.912 [0.904, 0.92] | 0.75 [0.741, 0.759] | REVERSED |
+| C | 1.01 [1, 1.02] | 0.96 [0.946, 0.975] | 0.948 [0.931, 0.965] | reported only, not gating |
+
+**The gap is reversed, not removed.** A ratio below one in the mitigated topology means that the configuration with capture attached offered MORE load than the configuration without capture. In T1 the no-capture configuration N has the lowest offered load of the four (A, B, C are above it). The rule of the design (P6) was written for a gap that shrinks toward parity and counts a reversal as closing the gap; the label SUPPORTED therefore says that the gap of Phase 8.2 (the capture configurations offering less load than no capture) does not appear in T1, not that capture is free. **The causes of the reversal are UNVERIFIED**; no run isolated them. (The first version of the summary used a different name for this class; it was renamed at the author's request after the run, thresholds unchanged, D10.11.)
+
+**C4 paced ladder (WP2b).** Topology T1, configs A, B and C, six runs per cell at five total rates; capture-side CPU is the busy time of the two receiver cores minus the idle busy time, per flow-matched packet (ns); rho = cost(A) / cost(B) with a 95% interval; drops are socket drops over packets received by the socket:
+
+| offered pps (total) | A: capture CPU ns / matched pkt | B | C (reported only) | rho = A / B [95%] | class (rule P2) | drop fraction A [95% Clopper-Pearson] | drop fraction B | drop class |
+|---|---|---|---|---|---|---|---|---|
+| 100000 | 1900 ± 123 | 1720 ± 109 | 236.8 ± 42.6 | 1.1 [1, 1.21] | UNDECIDED | 1.42e-05 [1.13e-05, 1.75e-05] | 0 [0, 1.23e-06] | NO-LOSS-BOUND |
+| 200000 | 1313.4 ± 57.4 | 938.38 ± 56 | 120.04 ± 34.1 | 1.4 [1.29, 1.51] | B-CHEAPER | 5.06e-05 [4.66e-05, 5.48e-05] | 0 [0, 6.15e-07] | NO-LOSS-BOUND |
+| 300000 | 1142.2 ± 57 | 797.79 ± 39.9 | 116.7 ± 23 | 1.43 [1.33, 1.54] | B-CHEAPER | 7.22e-06 [6.03e-06, 8.58e-06] | 5.22e-05 [4.76e-05, 5.72e-05] | NO-LOSS-BOUND |
+| 450000 | 988.89 ± 27.4 | 634.07 ± 35.1 | 77.804 ± 14.5 | 1.56 [1.46, 1.66] | B-CHEAPER | 4.51e-05 [4.26e-05, 4.77e-05] | 5.99e-05 [5.59e-05, 6.42e-05] | NO-LOSS-BOUND |
+| 600000 | 1114 ± 69.2 | 678.87 ± 38.8 | 66.123 ± 19.7 | 1.64 [1.5, 1.79] | B-CHEAPER | 0.00129 [0.00128, 0.0013] | 0.000179 [0.000172, 0.000185] | UNDECIDED |
+
+Label SUPPORTED by rule P9 (at least half of the reachable rates B-CHEAPER, none A-CHEAPER): B-CHEAPER at 4 of 5 rates; the ratio class is not B-CHEAPER at: 100000; the drop class is not NO-LOSS-BOUND at: 600000. The label concerns capture-side CPU per matched packet at paced rates on this machine, not the 1993 end-to-end speed-up and not the CSPF ratio.
+
+**C1 hardening (WP3).** Same pipeline as Phase 6c (decision equivalence against libpcap: 0 mismatches for the independent set, 0 for the real trace, builds excluded: 0). Primary pairing, mix M0, CSPF over BPF, M2 = host instructions per packet inside the evaluator, 95% interval over ten chunks of 1000 frames:
+
+| build (BPF optimised, our CSPF set) | F1 R [95%] | F2 | F3 | F4 | direction | ordering | R(F2) - R(F3) [95%] |
+|---|---|---|---|---|---|---|---|
+| clang-O0 | 1.48 [1.48, 1.48] | 2.78 [2.78, 2.79] | 2.87 [2.87, 2.88] | 19 [18.9, 19.1] | HOLDS | HOLDS | -0.0926 [-0.0977, -0.0874] |
+| clang-O2 | 1.39 [1.39, 1.39] | 2.58 [2.57, 2.58] | 2.41 [2.41, 2.42] | 16.4 [16.3, 16.4] | HOLDS | FAILS | 0.161 [0.156, 0.166] |
+| clang-O3 | 1.16 [1.16, 1.16] | 2.37 [2.37, 2.38] | 2.29 [2.28, 2.29] | 15.2 [15.1, 15.3] | HOLDS | FAILS | 0.0834 [0.0786, 0.0882] |
+| gcc-O0 | 0.656 [0.656, 0.656] | 1.18 [1.18, 1.18] | 1.15 [1.15, 1.15] | 7.71 [7.67, 7.74] | REVERSED | FAILS | 0.0276 [0.0256, 0.0296] |
+| gcc-O2 | 1.1 [1.1, 1.1] | 2.51 [2.5, 2.52] | 2.61 [2.6, 2.61] | 16.1 [16, 16.1] | HOLDS | HOLDS | -0.0978 [-0.104, -0.0919] |
+| gcc-O3 | 1.36 [1.36, 1.36] | 2.77 [2.76, 2.78] | 2.77 [2.76, 2.77] | 17.2 [17.1, 17.3] | HOLDS | FAILS | 0.00228 [-0.00355, 0.00811] |
+
+Direction holds in the majority of builds and ordering fails in the majority; the ordering of F2 against F3 is the part that flips: R(F2) - R(F3) is below zero (the ratio of Filter 2 below that of Filter 3, the order of Fig. 8) only in clang-O0, gcc-O2; the compiler and the optimisation level move it, as the rows show, and so does the libpcap optimiser setting (with the unoptimised BPF programs the ordering holds in 0 of 6 builds) and the CSPF set (the independent set gives the ordering in 3 of 3 mixes) (the direction fails in: gcc-O0; in gcc-O0 the ratio for Filter 1 is below one, that is, the BPF program costs more instructions than the stack program there; why was not investigated, UNVERIFIED). With the unoptimised BPF programs (reported, not gating):
+
+| build (BPF unoptimised, our CSPF set; reported, not gating) | F1 R [95%] | F2 | F3 | F4 | direction | ordering | R(F2) - R(F3) [95%] |
+|---|---|---|---|---|---|---|---|
+| clang-O0 | 1.48 [1.48, 1.48] | 2.14 [2.14, 2.15] | 0.711 [0.71, 0.712] | 6.57 [6.53, 6.6] | REVERSED | FAILS | 1.43 [1.42, 1.44] |
+| clang-O2 | 1.39 [1.39, 1.39] | 2 [1.99, 2] | 0.637 [0.636, 0.638] | 6.04 [6.02, 6.07] | REVERSED | FAILS | 1.36 [1.35, 1.37] |
+| clang-O3 | 1.16 [1.16, 1.16] | 1.87 [1.86, 1.88] | 0.622 [0.621, 0.622] | 5.87 [5.84, 5.89] | REVERSED | FAILS | 1.25 [1.24, 1.26] |
+| gcc-O0 | 0.656 [0.656, 0.656] | 0.916 [0.913, 0.919] | 0.32 [0.32, 0.32] | 2.85 [2.84, 2.87] | REVERSED | FAILS | 0.596 [0.593, 0.599] |
+| gcc-O2 | 1.1 [1.1, 1.1] | 2.02 [2.01, 2.02] | 0.732 [0.732, 0.733] | 6.63 [6.6, 6.65] | REVERSED | FAILS | 1.28 [1.28, 1.29] |
+| gcc-O3 | 1.36 [1.36, 1.36] | 2.21 [2.21, 2.22] | 0.771 [0.77, 0.772] | 6.96 [6.93, 6.99] | REVERSED | FAILS | 1.44 [1.43, 1.45] |
+
+An independent set of CSPF programs, written by a fresh subagent that was given only the paper excerpts and the opcode list (`src/p10_indep/`, hashes in `logs/p10/p10_indep_sha256.log`), and the real traffic mix (20000 captured frames, anonymised to 10.0.0.0/8 by `scripts/p10_traffic_anon.py`; the raw capture is not committed, the hash of the anonymised trace is in `logs/p10/real_trace_sha256.log`):
+
+| mix | CSPF set (gcc-O2 build, BPF optimised) | F1 R [95%] | F2 | F3 | F4 | direction | ordering | R(F2) - R(F3) [95%] |
+|---|---|---|---|---|---|---|---|---|
+| M0 | our CSPF programs | 1.1 [1.1, 1.1] | 2.51 [2.5, 2.52] | 2.61 [2.6, 2.61] | 16.1 [16, 16.1] | HOLDS | HOLDS | -0.0978 [-0.104, -0.0919] |
+| M0 | independent CSPF programs (fresh subagent) | 1.1 [1.1, 1.1] | 2.58 [2.57, 2.59] | 2.84 [2.83, 2.85] | 11.5 [11.4, 11.5] | HOLDS | HOLDS | -0.255 [-0.264, -0.247] |
+| Mip | our CSPF programs | 1.1 [1.1, 1.1] | 2.62 [2.61, 2.62] | 2.68 [2.67, 2.69] | 16 [16, 16] | HOLDS | HOLDS | -0.0599 [-0.0662, -0.0537] |
+| Mip | independent CSPF programs (fresh subagent) | 1.1 [1.1, 1.1] | 2.69 [2.69, 2.7] | 2.91 [2.9, 2.92] | 11.4 [11.4, 11.4] | HOLDS | HOLDS | -0.218 [-0.227, -0.21] |
+| Mnonip | our CSPF programs | 1.1 [1.1, 1.1] | 1.98 [1.97, 2] | 2.2 [2.18, 2.21] | 16.3 [16.3, 16.4] | HOLDS | HOLDS | -0.215 [-0.227, -0.202] |
+| Mnonip | independent CSPF programs (fresh subagent) | 1.1 [1.1, 1.1] | 2.03 [2.01, 2.04] | 2.36 [2.34, 2.37] | 11.6 [11.6, 11.7] | HOLDS | HOLDS | -0.332 [-0.344, -0.319] |
+
+| build | BPF program | F1 R [95%] | F2 | F3 | F4 | direction | ordering | against grid majority | R(F2) - R(F3) [95%] |
+|---|---|---|---|---|---|---|---|---|---|
+| clang-O2 | optimised | 1.39 [1.39, 1.39] | 2.52 [2.43, 2.62] | 2.39 [2.23, 2.55] | 6.69 [5.02, 8.37] | HOLDS | FAILS | AGREES | 0.133 [0.0369, 0.229] |
+| clang-O2 | unoptimised | 1.39 [1.39, 1.39] | 2.03 [1.94, 2.12] | 0.68 [0.567, 0.794] | 3.48 [2.95, 4.01] | REVERSED | FAILS | DISAGREES | 1.35 [1.16, 1.55] |
+| gcc-O2 | optimised | 1.1 [1.1, 1.1] | 2.42 [2.29, 2.55] | 2.58 [2.28, 2.88] | 6.69 [5.06, 8.32] | HOLDS | HOLDS | DISAGREES | -0.158 [-0.357, 0.0416] |
+| gcc-O2 | unoptimised | 1.1 [1.1, 1.1] | 2.02 [1.91, 2.13] | 0.763 [0.675, 0.852] | 3.73 [3.14, 4.32] | REVERSED | FAILS | DISAGREES | 1.25 [1.06, 1.44] |
+
+**C5 termination (WP4).** `bpftool -d prog load` of two socket-filter programs built with clang (`logs/p10/wp4/`): the unbounded loop is rejected, verbatim from the captured stderr: "infinite loop detected at insn 2", then "libbpf: prog 'p10_unbounded': failed to load: -EINVAL"; the loop with a constant bound is accepted (processed 703 insns (limit 1000000) max_states_per_insn 4 total_states 12 peak_states 12 mark_read 1). One unbounded and one bounded program test termination enforcement; they do not establish it for all programs (UNVERIFIED beyond these two).
+
 ## Threats to validity
 
 1. **Ambient noise (V8).** The first part of the matrix ran while the machine was still busy; the canary rate on cores 0 and 1 (what the experiment does not touch) was far above the idle level, and V8 flagged those windows and re-ran them (at most twice per cell). Per-block canary and busy medians, extracted from `logs/matrix_postcheck.log`:
@@ -280,6 +402,13 @@ So V8 did not change a Phase 6 label, and in Phase 8.2 it kept a contaminated se
 11. **Phase 8.4 noise is synthetic.** stress-ng duty cycles on single cores are not the real ambient noise of Phase 6; the headline curve metric is system-wide and small at the chosen rate, so slow drift of the machine between launches dominates it; the tolerance of 5% is my choice; 30 windows per cell resolve only large shifts.
 12. **Measurement tooling depends on compiler and platform.** callgrind's toggle collection lost returns on the VM in a compiler-dependent way (C1 results above); amendment A3 counts evaluator functions only.
 13. **Interactive activity.** Runs started from, and monitored in, the same desktop session as the assistant are sensitive to its activity (Phase 8.1); the run scripts use a settle pause, a pre-flight and a hands-off protocol, and several launches had to be repeated for that reason.
+14. **Phase 10 is one machine and a different kernel.** The Phase 10 runs used kernel 6.17.0-41-generic; the earlier phases ran on another build (D10.5). Phase 10 numbers are not pooled with earlier ones and the labels are about this machine.
+15. **WP1 was badly designed (my omission) and WP1b repairs it.** The first microbenchmark run had no minimum batch duration, so most canary windows were shorter than the 10 ms tick can resolve (see the Phase 10 section); its labels are kept as superseded and INCONCLUSIVE. Hypothesis A (batches too short for the tick) is supported by the logs; hypothesis B (real background load) is neither shown nor excluded.
+16. **C2 and C3 are microbenchmarks.** They measure the in-kernel filter and the user-space drain path, not end-to-end capture, and the margin of 10 ns/byte is much larger than the measured slopes, so BOUNDED is a weak statement; the comparison with the 1993 slopes is between different measurement paths.
+17. **The mitigation result is a reversal with unknown causes.** In the mitigated topology the configurations with capture offered more load than the one without; the causes were not isolated. The ladder label C4 rests on capture-side CPU per matched packet and holds at 4 of 5 rates; the ratio class is not B-CHEAPER at 100000 and the drop class is not NO-LOSS-BOUND at 600000.
+18. **C1 depends on our own CSPF programs and on the toolchain.** The independent set was written by a subagent from paper excerpts, still not the 1993 code; the real trace comes from one network and was anonymised; the direction of the ratio fails in gcc-O0 and the F2 against F3 ordering depends on compiler and optimisation level.
+19. **Rules adjusted before or after seeing data.** The V8 rule for the flood blocks was amended (A2) after smoke runs and before any measured run; the summarizer had an overflow bug in the Clopper-Pearson interval that was fixed after the run (D10.7); the name of the mitigation class was changed after the run (D10.11); the copy-floor comparison is post hoc. The changes made after measured data had been seen (D10.7, D10.11) changed no threshold and no label.
+
 
 ## Amendments
 
@@ -309,8 +438,11 @@ Design amendments of the later sub-phases (dates read from the amendment heading
 | `docs/phase8_4_design.md` | A3 | 2026-10-26 | levels fixed from calibration probe 2; levels must be distinct and increasing |
 | `docs/phase8_4_design.md` | A4 | 2026-10-27 | post hoc: blocked re-analysis, gross-CPU scale, dose-response, restated false-positive criterion |
 | `docs/phase8_4_design.md` | A5 | 2026-10-27 | post hoc: erratum to A4 (the number of windows) |
+| `docs/phase10_design.md` | A1 | 2026-11-08 | before any measured run: the independent CSPF set's input file omitted one table row (corrected, logged) |
+| `docs/phase10_design.md` | A2 | 2026-11-08 | before any measured run: calibration windows for every cell of the flood blocks (V8 differs by topology and config in smoke runs) |
+| `docs/phase10_wp1b_design.md` | none (frozen once) | 2026-11-08 | written after the WP1 diagnosis and before any WP1b run; changes only batch length, clocks and replication |
 
-Hash chains: `docs/phase8_2_design.md` (`logs/p8/p8_2/p8_2_design_chain.log`) and `docs/phase8_4_design.md` (`logs/p8/p8_4/p8_4_design_chain.log`) were reproduced by script; the file as it stands is not the version hashed first, because both were amended. Phase 8.4 amendments A4 and A5 and the `docs/phase6c_design.md` amendment A3 were written after results had been seen.
+Hash chains: `docs/phase8_2_design.md` (`logs/p8/p8_2/p8_2_design_chain.log`) and `docs/phase8_4_design.md` (`logs/p8/p8_4/p8_4_design_chain.log`) were reproduced by script; the file as it stands is not the version hashed first, because both were amended. Phase 8.4 amendments A4 and A5 and the `docs/phase6c_design.md` amendment A3 were written after results had been seen. The Phase 10 designs were frozen before their runs: `docs/phase10_design.md` (hash chain reproduced by `scripts/p10_design_chain.py`, amendments A1 and A2 before any measured run) and `docs/phase10_wp1b_design.md` (hash and time in `logs/p10/p10_wp1b_sha256.log`).
 
 ## UNVERIFIED items
 
@@ -336,6 +468,13 @@ Each item was marked UNVERIFIED where it arose; nothing here is claimed as a res
 18. **Whether rule V8 protects the headline metric to the tolerance** (Phase 8.4): the premise is PARTIAL; the pooled test is undecided, the post hoc blocked test supports it only for the flagged curve levels, and by arithmetic V8 is lax for that tolerance; the cause of the dose-response slope exceeding the additive-only value was not investigated.
 19. **Noise that V8 cannot see (E3)** is unresolved: the ratios to the control for CPU noise on the measurement cores are 2.141 and 2.273, no interval excludes no effect, and the memory-pressure interval is wide enough to contain large effects.
 20. **Whether the interactive session's activity caused the noisy idle windows of Phase 8.1** is a hypothesis from the timing of commands and replies, not a tested cause.
+21. **Why the gap of Phase 8.2 is reversed in the mitigated topology** (Phase 10, WP2a): the offered load with capture attached is higher than without capture; the causes were not isolated.
+22. **Whether the extra canary load in the first WP1 run was real background load or caused by the measurement itself** (D10.8): a fixed cost of about two ticks per attempt fits a harness explanation; no run isolated it.
+23. **The real-traffic capture script after its repair** (`scripts/p10_capture_real.sh`, systemd-run based, D10.3) was not re-run; the anonymised trace that the labels use was captured before the repair.
+24. **Why the user-space drain path grows faster with size than a pure copy** (post hoc, Phase 10): both slopes are small; no mechanism was tested.
+25. **Why the BPF program for Filter 1 costs more instructions than the stack program in gcc-O0** (Phase 10, WP3): observed, not investigated.
+26. **C5 beyond two programs.** The verifier rejected one unbounded loop and accepted one bounded loop; termination enforcement for other programs was not tested.
+
 
 ## Self-audit against CLAUDE.md
 
@@ -359,6 +498,7 @@ WORKFLOW
 - *Same error twice: stop and ask; no silent architecture changes.* Followed for the tcpdump hang (stopped after the second occurrence, diagnosed), the direct-packet-access rejection (stopped and asked), the calibration HOLD (stopped), and the V5'c wording (asked). One judgment call was made before approval and disclosed afterwards: the classifier-tap mechanism (D6.7). One premature recommendation to stop the matrix was wrong and was corrected (D6.10).
 - *Unsure: write UNVERIFIED and ask.* Followed; see the list above.
 - *Phase 8 (follow-up) records.* Each Phase 8 step was committed once after "Phase 8.N complete" with its verify script re-run (`logs/p8/`); pre-declared design documents were hashed before their first run, amended only by dated amendments, and the hash chains were reproduced by script. Departures: Phase 8.4 amendments A4 and A5 and Phase 6c amendment A3 were written after results had been seen (labelled post hoc); a wrong launch deleted the raw logs of Phase 8.2 run set 1 (D8.14); several launches were repeated after pre-flight failures (D8.17).
+- *Phase 10 and 11 records.* Designs were hashed before their runs (`logs/p10/p10_design_sha256.log`, `logs/p10/p10_wp1b_sha256.log`), amended only by dated amendments, and verified by script (`scripts/p10_verify.sh`, no failure); every shown number comes from `results/p10_summary.json`, which `scripts/p10_summarize.py` computes from `logs/p10/`. Departures, all in `DEVIATIONS.md`: the first WP1 had no minimum batch duration (D10.8, repaired by WP1b, D10.9); the real-traffic capture hung under AppArmor and was stopped by the user (D10.3); the summarizer overflowed on the packet counts and was fixed after the run (D10.7); the wording of the mitigation class and the tables of C2 and C3 were changed after the run at the author's request (D10.11). Phase 10 was committed once after "Phase 10 complete" with its verify script and a secrets scan re-run (`logs/p10/p10_verify.log`, `logs/p10/p10_secrets_scan.log`); build artifacts and the raw capture are not in git.
 - *Commit rule (re-run the verify script, one commit titled "Phase N: ...", never commit build artifacts or secrets).* Followed for Phases 1 to 5 (verify scripts re-run into `logs/*_rerun/`). Phase 6 used several commits by ruling (C1 to C6, all logged). `.gitignore` excludes `build/` and `*.pcap` (about 3 GB of captures stay local); a secrets scan ran before every commit.
 
 ## Reproducibility

@@ -8,7 +8,12 @@ import json
 import re
 import statistics
 import subprocess
+import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_report_p10   # Phase 11: the Phase 10 parts of the report (computed from results/p10_summary.json)
 
 ROOT = Path(__file__).resolve().parent.parent
 R = ROOT / "results"
@@ -253,7 +258,9 @@ for rel in ("docs/phase6c_design.md", "docs/phase8_2_design.md", "docs/phase8_4_
         amend2_rows.append([f"`{rel}`", aid, date, REASONS[(rel, aid)]])
 assert len(amend2_rows) == 10, len(amend2_rows)   # A1-A3 of 6c, A1-A2 of 8.2, A1-A5 of 8.4
 
-claims = f"""| ID | claim (CLAIMS.md) | final verdict | where to look |
+P10 = build_report_p10.build(rd, rj, mdtable, commit)
+
+claims = f"""| ID | claim (CLAIMS.md) | verdict of Phases 6 to 9 (superseded where the Phase 10 table above differs) | where to look |
 |---|---|---|---|
 | C1 | register-based vs stack-based filter machine, instructions per packet (Fig. 8) | **{c1x_json['verdict_m2']}** (M2, host instructions per packet, primary pairing; x86_64 container, repeated on the aarch64 VM with the same label). Direction holds for all four filters (R above 1), the order of the ratios is not robust across machines, the grid fails in the cells listed under the C1 results ({grid_cells}) on both machines; the measured ratios are for our own interpreters and CSPF programs, not the 1993 code (D6c.3, D6c.4) | `results/c1_verdict.md`, `results/c1_summary.md`, `logs/p8/a3/results/`, `docs/phase6c_design.md`, `DEVIATIONS.md` D6c.1-D6c.4, D8.1-D8.9 |
 | C2 | "reject all": in-kernel filtering cost flat vs packet size (Fig. 3) | **{V['C2'][0]}** (Phase 8.3 quiet re-run) | `results/verdicts.md`, `results/summary.md` (Reject curve), `logs/bench_[ABD]_nm_*.log` |
@@ -268,9 +275,10 @@ Replication of McCanne and Jacobson, "The BSD Packet Filter" (USENIX Winter 1993
 
 ## Abstract
 
-The paper's filter design was rebuilt as an eBPF socket filter and measured against a user-space copy-then-filter sniffer on an arm64 virtual machine ({env_row('kernel')}, {env_row('nproc')} cores). The eBPF program loads (the verifier accepts it), counts and matches exactly what tcpdump counts, and two deliberately unsafe variants show the verifier rejecting a possibly-null map value and a context read a socket filter may not make while accepting a source-unsafe program it can prove safe. The benchmark matrix ({plan_rows} plan rows; {len(final)} final measured runs, {len(valid)} valid; {len(attempts)} re-run attempts kept) did not replicate the paper's shape claims cleanly: C2 is {V['C2'][0]} and C3 is {V['C3'][0]}, and C4 is {V['C4'][0]} under the frozen V8 rule ({V['C4_floor'][0]} as a receiver-drop claim if the post hoc, uncalibrated flood V8 floor is applied, D8.22), because at flood rates the sending core's generation capacity, not the receiver, became the limit, and the offered rate itself differed by configuration. Two measurement discoveries shaped the result: a noise-detection rule (V8) built on idle "canary" cores correctly flagged a noisy start of the session, and the idle baseline taken in that noisy phase ({idle_session:.3f} CPU-s/s against {base6['idle_rate_mean']:.3f} at calibration, Phase 6) had to be replaced by the quiet calibration baseline (D6.13). C1 (instruction counts, sub-phase 6c and Phase 8.0) is {c1x_json['verdict_m2']}: the register machine executes fewer instructions than the stack machine for all four filters, but the order of the ratios is not stable across machines and compilers. A control configuration without any capture tap (Phase 8.2) supports the explanation that the flood's offered load is limited by the sender ({s82_verdict}, run set 2). A direct test of the V8 noise rule (Phase 8.4) found that it detects canary-core noise reliably but could not show that it protects the headline metric to a 5% tolerance (premise {s84_json['overall']}). The paper's CSPF ratio is not replicated end-to-end.
+The paper's filter design was rebuilt as an eBPF socket filter and measured against a user-space copy-then-filter sniffer on an arm64 virtual machine ({env_row('kernel')}, {env_row('nproc')} cores). The eBPF program loads (the verifier accepts it), counts and matches exactly what tcpdump counts, and two deliberately unsafe variants show the verifier rejecting a possibly-null map value and a context read a socket filter may not make while accepting a source-unsafe program it can prove safe. The benchmark matrix ({plan_rows} plan rows; {len(final)} final measured runs, {len(valid)} valid; {len(attempts)} re-run attempts kept) did not replicate the paper's shape claims cleanly: C2 is {V['C2'][0]} and C3 is {V['C3'][0]}, and C4 is {V['C4'][0]} under the frozen V8 rule ({V['C4_floor'][0]} as a receiver-drop claim if the post hoc, uncalibrated flood V8 floor is applied, D8.22), because at flood rates the sending core's generation capacity, not the receiver, became the limit, and the offered rate itself differed by configuration. Two measurement discoveries shaped the result: a noise-detection rule (V8) built on idle "canary" cores correctly flagged a noisy start of the session, and the idle baseline taken in that noisy phase ({idle_session:.3f} CPU-s/s against {base6['idle_rate_mean']:.3f} at calibration, Phase 6) had to be replaced by the quiet calibration baseline (D6.13). C1 (instruction counts, sub-phase 6c and Phase 8.0) is {c1x_json['verdict_m2']}: the register machine executes fewer instructions than the stack machine for all four filters, but the order of the ratios is not stable across machines and compilers. A control configuration without any capture tap (Phase 8.2) supports the explanation that the flood's offered load is limited by the sender ({s82_verdict}, run set 2). A direct test of the V8 noise rule (Phase 8.4) found that it detects canary-core noise reliably but could not show that it protects the headline metric to a 5% tolerance (premise {s84_json['overall']}). The paper's CSPF ratio is not replicated end-to-end. {P10['abstract']}
 
-## Claims matrix
+{P10['final']}
+## Claims matrix of Phases 6 to 9 (kept for the record)
 
 {claims}
 
@@ -283,7 +291,7 @@ Verdict texts (computed by `scripts/summarize.py` from the pre-declared rules, 9
 
 ## Methodology and environment
 
-Testbed (`ENV.md`, `results/topology.md`): kernel {env_row('kernel')}, {env_row('CPU arch')}, {env_row('clang')}, libbpf {env_row('libbpf (pkg-config)')} (headers), bpftool {env_row('bpftool')}, bpf_jit_enable {env_row('bpf_jit_enable (live)')}, {env_row('nproc')} CPUs, no CPU-frequency governor (virtual machine). Traffic: iperf3 UDP between a veth pair, one end in network namespace `p2ns` (`scripts/lab_up.sh`); the capture process is pinned to core 2, the iperf3 server to core 3, the main client to core 4, the noise client to core 1, core 0 and (outside flood runs) core 1 are the canaries. Configurations: A user-space `baseline_sniffer`; B eBPF filter with a draining loader; C the same without drain; D `reject_all` (floor); E `accept_all`. Each run is 10 s; the matrix is the frozen plan `results/bench_plan.tsv` (seed 20261018) at {cal['p_curve']} offered pps for the curves (K1 redefined, D6.9) and unlimited rate for the flood. A separate always-on classifier tap (identical for every config) splits every frame into data flow, iperf3 control and other, so the conservation rules V5'a-e can be checked on every run (`docs/phase6_addenda.md`). Rules, thresholds and verdict criteria were frozen before any run (`docs/phase6_design.md`, commit 3591267) and changed only by the dated addenda below. The session ran in the graphical desktop (`ENV.md`, D6.9); noise was handled by rule V8 and idle subtraction. Phases: 0 bootstrap and claims; 1 toolchain; 2 user-space baseline; 3 eBPF filter; 4 loader and map reader; 5 verifier stress test; 6 benchmark design, calibration and matrix (6c: C1 instruction counts, run first in an x86_64 container with gcc {gcc_x86} and valgrind {vg_x86}, D6c.1); 7 report and historical comparison; 8.0 C1 repeated on this VM (gcc {gcc_vm}, valgrind {vg_vm}) with amendment A3; 8.1 quiet measurement setup; 8.2 sender-bottleneck test with a no-capture control; 8.3 quiet re-run for C2 and C3; 8.4 validation of rule V8; 8.7 this update of the report.
+Testbed (`ENV.md`, `results/topology.md`): kernel {env_row('kernel')}, {env_row('CPU arch')}, {env_row('clang')}, libbpf {env_row('libbpf (pkg-config)')} (headers), bpftool {env_row('bpftool')}, bpf_jit_enable {env_row('bpf_jit_enable (live)')}, {env_row('nproc')} CPUs, no CPU-frequency governor (virtual machine). Traffic: iperf3 UDP between a veth pair, one end in network namespace `p2ns` (`scripts/lab_up.sh`); the capture process is pinned to core 2, the iperf3 server to core 3, the main client to core 4, the noise client to core 1, core 0 and (outside flood runs) core 1 are the canaries. Configurations: A user-space `baseline_sniffer`; B eBPF filter with a draining loader; C the same without drain; D `reject_all` (floor); E `accept_all`. Each run is 10 s; the matrix is the frozen plan `results/bench_plan.tsv` (seed 20261018) at {cal['p_curve']} offered pps for the curves (K1 redefined, D6.9) and unlimited rate for the flood. A separate always-on classifier tap (identical for every config) splits every frame into data flow, iperf3 control and other, so the conservation rules V5'a-e can be checked on every run (`docs/phase6_addenda.md`). Rules, thresholds and verdict criteria were frozen before any run (`docs/phase6_design.md`, commit 3591267) and changed only by the dated addenda below. The session ran in the graphical desktop (`ENV.md`, D6.9); noise was handled by rule V8 and idle subtraction. Phases: 0 bootstrap and claims; 1 toolchain; 2 user-space baseline; 3 eBPF filter; 4 loader and map reader; 5 verifier stress test; 6 benchmark design, calibration and matrix (6c: C1 instruction counts, run first in an x86_64 container with gcc {gcc_x86} and valgrind {vg_x86}, D6c.1); 7 report and historical comparison; 8.0 C1 repeated on this VM (gcc {gcc_vm}, valgrind {vg_vm}) with amendment A3; 8.1 quiet measurement setup; 8.2 sender-bottleneck test with a no-capture control; 8.3 quiet re-run for C2 and C3; 8.4 validation of rule V8; 8.7 an earlier update of the report; 9 integrity audit of Phase 8.3; 10 hardened re-measurement of C1 to C5 (kernel {P10['kernel']}); 11 this update, with the Phase 10 results and labels.
 
 ## Results
 
@@ -384,6 +392,7 @@ Phase 8.2 run set 1 with V8 off, **computed only from surviving derived data** (
 
 So V8 did not change a Phase 6 label, and in Phase 8.2 it kept a contaminated set from giving a different verdict than the clean run set.
 
+""" + P10['section'] + f"""
 ## Threats to validity
 
 1. **Ambient noise (V8).** The first part of the matrix ran while the machine was still busy; the canary rate on cores 0 and 1 (what the experiment does not touch) was far above the idle level, and V8 flagged those windows and re-ran them (at most twice per cell). Per-block canary and busy medians, extracted from `logs/matrix_postcheck.log`:
@@ -405,6 +414,7 @@ So V8 did not change a Phase 6 label, and in Phase 8.2 it kept a contaminated se
 11. **Phase 8.4 noise is synthetic.** stress-ng duty cycles on single cores are not the real ambient noise of Phase 6; the headline curve metric is system-wide and small at the chosen rate, so slow drift of the machine between launches dominates it; the tolerance of {tol_84} is my choice; {n_win_cell} windows per cell resolve only large shifts.
 12. **Measurement tooling depends on compiler and platform.** callgrind's toggle collection lost returns on the VM in a compiler-dependent way (C1 results above); amendment A3 counts evaluator functions only.
 13. **Interactive activity.** Runs started from, and monitored in, the same desktop session as the assistant are sensitive to its activity (Phase 8.1); the run scripts use a settle pause, a pre-flight and a hands-off protocol, and several launches had to be repeated for that reason.
+{P10['threats']}
 
 ## Amendments
 
@@ -416,9 +426,9 @@ Dates are the commit dates from git. The rule text of A1 and A2 is in `docs/phas
 
 Design amendments of the later sub-phases (dates read from the amendment headings of each design document; the reasons are summarised, the full text is in the document):
 
-""" + mdtable(["document", "amendment", "date", "reason"], amend2_rows) + """
+""" + mdtable(["document", "amendment", "date", "reason"], amend2_rows + P10["amend_rows"]) + """
 
-Hash chains: `docs/phase8_2_design.md` (`logs/p8/p8_2/p8_2_design_chain.log`) and `docs/phase8_4_design.md` (`logs/p8/p8_4/p8_4_design_chain.log`) were reproduced by script; the file as it stands is not the version hashed first, because both were amended. Phase 8.4 amendments A4 and A5 and the `docs/phase6c_design.md` amendment A3 were written after results had been seen.
+Hash chains: `docs/phase8_2_design.md` (`logs/p8/p8_2/p8_2_design_chain.log`) and `docs/phase8_4_design.md` (`logs/p8/p8_4/p8_4_design_chain.log`) were reproduced by script; the file as it stands is not the version hashed first, because both were amended. Phase 8.4 amendments A4 and A5 and the `docs/phase6c_design.md` amendment A3 were written after results had been seen. The Phase 10 designs were frozen before their runs: `docs/phase10_design.md` (hash chain reproduced by `scripts/p10_design_chain.py`, amendments A1 and A2 before any measured run) and `docs/phase10_wp1b_design.md` (hash and time in `logs/p10/p10_wp1b_sha256.log`).
 """
 
 tail = f"""
@@ -446,6 +456,7 @@ Each item was marked UNVERIFIED where it arose; nothing here is claimed as a res
 18. **Whether rule V8 protects the headline metric to the tolerance** (Phase 8.4): the premise is {s84_json['overall']}; the pooled test is undecided, the post hoc blocked test supports it only for the flagged curve levels, and by arithmetic V8 is lax for that tolerance; the cause of the dose-response slope exceeding the additive-only value was not investigated.
 19. **Noise that V8 cannot see (E3)** is unresolved: the ratios to the control for CPU noise on the measurement cores are {e3_s1} and {e3_s2}, no interval excludes no effect, and the memory-pressure interval is wide enough to contain large effects.
 20. **Whether the interactive session's activity caused the noisy idle windows of Phase 8.1** is a hypothesis from the timing of commands and replies, not a tested cause.
+{P10['unverified']}
 
 ## Self-audit against CLAUDE.md
 
@@ -469,6 +480,7 @@ WORKFLOW
 - *Same error twice: stop and ask; no silent architecture changes.* Followed for the tcpdump hang (stopped after the second occurrence, diagnosed), the direct-packet-access rejection (stopped and asked), the calibration HOLD (stopped), and the V5'c wording (asked). One judgment call was made before approval and disclosed afterwards: the classifier-tap mechanism (D6.7). One premature recommendation to stop the matrix was wrong and was corrected (D6.10).
 - *Unsure: write UNVERIFIED and ask.* Followed; see the list above.
 - *Phase 8 (follow-up) records.* Each Phase 8 step was committed once after "Phase 8.N complete" with its verify script re-run (`logs/p8/`); pre-declared design documents were hashed before their first run, amended only by dated amendments, and the hash chains were reproduced by script. Departures: Phase 8.4 amendments A4 and A5 and Phase 6c amendment A3 were written after results had been seen (labelled post hoc); a wrong launch deleted the raw logs of Phase 8.2 run set 1 (D8.14); several launches were repeated after pre-flight failures (D8.17).
+{P10['selfaudit']}
 - *Commit rule (re-run the verify script, one commit titled "Phase N: ...", never commit build artifacts or secrets).* Followed for Phases 1 to 5 (verify scripts re-run into `logs/*_rerun/`). Phase 6 used several commits by ruling (C1 to C6, all logged). `.gitignore` excludes `build/` and `*.pcap` (about 3 GB of captures stay local); a secrets scan ran before every commit.
 
 ## Reproducibility
@@ -488,10 +500,26 @@ def patch_line(rel, start, new_line):
     p.write_text("\n".join(lines))
 
 
+def append_line(rel, start, addition, marker):
+    """Append `addition` to the single line of `rel` that starts with `start`; an earlier addition (from `marker` on) is removed first, so a second build gives the same bytes."""
+    p = ROOT / rel
+    lines = p.read_text().split("\n")
+    idx = [i for i, l in enumerate(lines) if l.startswith(start)]
+    assert len(idx) == 1, (rel, start, idx)
+    base = lines[idx[0]]
+    if marker in base:
+        base = base[:base.index(marker)]
+    lines[idx[0]] = base + addition
+    p.write_text("\n".join(lines))
+
+
 ratios_x = ", ".join(f"{c1x[f][6].split(' ')[0]}" for f in ("F1", "F2", "F3", "F4"))
 ratios_v = ", ".join(f"{c1v[f][6].split(' ')[0]}" for f in ("F1", "F2", "F3", "F4"))
 patch_line("results/comparison.md", "- **Register machine (C1).**",
-           f"- **Register machine (C1).** Evaluated in sub-phase 6c and repeated in Phase 8.0 (`results/c1_summary.md`, `results/c1_verdict.md`): the stack machine (a CSPF stand-in, our own programs, D6c.3) executes more host instructions per packet than the register machine for all four Fig. 8 filters; the ratio CSPF/BPF of M2 for Filters 1 to 4 is {ratios_x} on the x86_64 container and {ratios_v} on the aarch64 VM (evaluator-only counts), against the Fig. 8 labels {c1x['F1'][9]}, {c1x['F2'][9]}, {c1x['F3'][9]}, {c1x['F4'][9]}; verdict {c1x_json['verdict_m2']} on both. The 1993 code column of this document cites the FreeBSD descendant of the code, not a 1993 snapshot (D7.2).")
+           f"- **Register machine (C1).** Evaluated in sub-phase 6c and repeated in Phase 8.0 (`results/c1_summary.md`, `results/c1_verdict.md`): the stack machine (a CSPF stand-in, our own programs, D6c.3) executes more host instructions per packet than the register machine for all four Fig. 8 filters; the ratio CSPF/BPF of M2 for Filters 1 to 4 is {ratios_x} on the x86_64 container and {ratios_v} on the aarch64 VM (evaluator-only counts), against the Fig. 8 labels {c1x['F1'][9]}, {c1x['F2'][9]}, {c1x['F3'][9]}, {c1x['F4'][9]}; verdict {c1x_json['verdict_m2']} on both. The 1993 code column of this document cites the FreeBSD descendant of the code, not a 1993 snapshot (D7.2)." + P10["comparison_c1"])
+
+append_line("results/comparison.md", "- **In-place filtering and tap cost (C2, C3, C4).**", P10["comparison_c234"], " **Phase 10 update (final labels):**")
+append_line("results/comparison.md", "- **Safety (C5).**", P10["comparison_c5"], " **Phase 10 update:**")
 
 readme = (ROOT / "README.md").read_text()
 a = readme.index("## Status")
@@ -514,9 +542,32 @@ status = """## Status
 - [x] Phase 8.3: quiet repeat for C2 and C3 with settled machine baseline
 - [x] Phase 8.4: validation of the V8 noise rule (`results/p8_4_findings.md`)
 - [x] Phase 8.7: `REPORT.md`, `README.md` and `results/comparison.md` brought up to date (`scripts/build_report.py`, `scripts/p8_7_verify.sh`)
+- [x] Phase 9: integrity audit of Phase 8.3 (`DEVIATIONS.md` D8.19 to D8.25, `results/phase6_noisy/`, `logs/p9/`)
+- [x] Phase 10: hardened re-measurement of C1 to C5 under frozen designs (`docs/phase10_design.md`, `docs/phase10_wp1b_design.md`, `results/p10_summary.md`, `logs/p10/`)
+- [x] Phase 11: `REPORT.md`, `README.md` and `results/comparison.md` brought up to date with the Phase 10 results and final labels (`scripts/build_report.py`, `scripts/build_report_p10.py`)
 
 """
 (ROOT / "README.md").write_text(readme[:a] + status + readme[b:])
+patch_line("README.md", "Final results and verdicts:", "Final results and verdicts: **[REPORT.md](REPORT.md)** (the section \"Final labels after Phase 10\" gives the final label of every claim; the claims matrix of Phases 6 to 9 is kept for the record); Phase 10 summary: `results/p10_summary.md`; rule text and amendments: `docs/phase6_design.md`, `docs/phase6_addenda.md`, `docs/phase10_design.md`, `docs/phase10_wp1b_design.md`, `DEVIATIONS.md`.")
+rtxt = (ROOT / "README.md").read_text()
+old_fig = "which is what the MIXED and INCONCLUSIVE verdicts for C2 and C3 say"
+new_fig = "which is what the Phase 8.3 verdicts for C2 and C3 (MIXED and INCONCLUSIVE, superseded by the Phase 10 labels) say"
+rtxt = rtxt.replace(old_fig, new_fig)
+p10_repro = """Phase 10 (privileged; each command is one hands-off launch, leave the machine idle; each takes about an hour; they refuse to start if their output folders are not empty):
+
+```bash
+sudo bash scripts/p10_run_all.sh 2>&1 | tee logs/p10/p10_run_all_console.log   # WP1 to WP4 (the first WP1 there is superseded by WP1b)
+sudo bash scripts/p10b_run.sh 2>&1 | tee logs/p10/p10b_run_console.log        # WP1b, long-batch microbenchmarks for C2 and C3
+python3 -I scripts/p10_summarize.py                                           # results/p10_summary.md and .json
+bash scripts/p10_verify.sh                                                    # re-derives every label, checks hashes and the design chain
+python3 scripts/build_report.py                                               # REPORT.md, README.md status, results/comparison.md
+```
+
+"""
+if "Phase 10 (privileged;" not in rtxt:
+    k = rtxt.index("What a reviewer should see after step 1:")
+    rtxt = rtxt[:k] + p10_repro + rtxt[k:]
+(ROOT / "README.md").write_text(rtxt)
 
 out = ROOT / "logs" / "p8" / "p8_7" / "report_sources.txt"
 out.parent.mkdir(parents=True, exist_ok=True)
