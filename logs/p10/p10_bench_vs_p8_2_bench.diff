@@ -1,0 +1,81 @@
+2,8c2,8
+< # p8_2_bench.sh - Phase 8.2 copy of scripts/bench.sh (Phase 6 harness, frozen). Changes, all listed in logs/p8/p8_2/p8_2_bench_vs_bench.diff:
+< #   - config N (no capture process, no eBPF capture filter; classifier tap, iperf3 servers and clients as in the other configs)
+< #   - PROFILE=1: perf record -e cpu-clock -F 997 -g -a -C <sender cores> during the traffic window (docs/phase8_2_design.md section 4)
+< #   - outputs go to logs/p8/p8_2/ (P8_OUT_DIR), perf data to build/p8_2/perf/ (untracked)
+< #   - the plan/topology/calibrate/run subcommands are removed (they write tracked files under results/); only `one` and `idle` remain
+< # Design, definitions and pre-declared rules: docs/phase6_design.md, docs/phase6_addenda.md, docs/phase8_2_design.md.
+< #
+---
+> # p10_bench.sh - Phase 10 copy of scripts/p8_2_bench.sh (itself a copy of the frozen scripts/bench.sh). Changes, all listed in logs/p10/p10_bench_vs_p8_2_bench.diff
+> # (docs/phase10_design.md section 5):
+> #   - P10_TOPO=T0 (capture on p1veth0 in the root namespace, rps_cpus of p1veth1 = 0) or T1 (capture on p1veth1 inside p2ns, started with nsenter, rps_cpus of p1veth1 rx-0
+> #     set to core 1 for the run and reset to 0 afterwards); the topology and the readback of rps_cpus are written to the run log header
+> #   - both iperf3 clients are pinned to core 4 (core 1 is the RPS core); capture core 2, servers core 3, classifier/system core 0 as before
+> #   - traffic `flood` with PPS > 0 is the paced ladder: two streams (4040 match, 5050 noise), each paced at PPS/2 packets per second, 256-byte frames; PPS = 0 is the unlimited flood
+> #   - outputs go to $P10_OUT_DIR (default logs/p10/wp2a); the PROFILE hook of Phase 8.2 is kept but unused
+10,17c10,12
+< #   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> $P8_OUT_DIR/<label>_<cfg>_<traffic>_<size>_<rep>.log   (root, generates traffic)
+< #                                BENCH_LABEL sets the label (default bench), PROFILE=1 adds the perf profile
+< #   idle [DUR]                   3 idle windows (harness attached, no traffic)   (root)
+< #
+< # Configs   A baseline_sniffer | B loader -d, port-4040 filter | C loader (no drain), port-4040 filter
+< #           D loader -d, reject_all | E loader -d, accept_all | N no capture process (Phase 8.2)
+< # Traffic   nm = UDP to a non-matching port (5050) | m = UDP to port 4040 | flood = two unlimited UDP streams
+< #           (4040 match + 5050 noise) | warmup = like m at size 512 | cal = calibration ladder
+---
+> #   one CFG TRAFFIC SIZE REP PPS [DUR]  one run -> $P10_OUT_DIR/<label>_<cfg>_<traffic>_<size>_<rep>.log   (root)   BENCH_LABEL sets the label (default bench)
+> #   idle [DUR]                          3 idle windows (harness attached: config D in the root namespace, classifier, no traffic)   (root)
+> # Configs   A baseline_sniffer | B loader -d, port-4040 filter | C loader (no drain) | D loader -d, reject_all | E accept_all | N no capture process
+34c29
+< CPU_SYS=0; CPU_NOISE_CLI=1; CPU_CAP=2; CPU_SRV=3; CPU_MATCH_CLI=4
+---
+> CPU_SYS=0; CPU_RPS=1; CPU_CAP=2; CPU_SRV=3; CPU_MATCH_CLI=4; CPU_NOISE_CLI=4   # Phase 10: both clients on core 4, core 1 is the RPS core
+38,39c33,36
+< P8_OUT_DIR="${P8_OUT_DIR:-logs/p8/p8_2}"
+< P8_PERF_DIR="${P8_PERF_DIR:-build/p8_2/perf}"
+---
+> P8_OUT_DIR="${P10_OUT_DIR:-logs/p10/wp2a}"
+> P8_PERF_DIR="${P8_PERF_DIR:-build/p10/perf}"
+> TOPO="${P10_TOPO:-T0}"
+> VB=p1veth1
+57c54,56
+< cap_cmd() { # echo the capture command line for a config
+---
+> cap_cmd() { # echo the capture command line for a config (topology T1: nsenter into p2ns and capture on p1veth1)
+>     local ifc="$VA" pre=""
+>     [[ "$TOPO" == T1 && "$1" != D ]] && { ifc="$VB"; pre="nsenter --net=/var/run/netns/$NS "; }
+59,61c58,60
+<         A) echo "build/baseline_sniffer $VA" ;;
+<         B) echo "build/loader -d $VA build/phase3_kern.o" ;;
+<         C) echo "build/loader $VA build/phase3_kern.o" ;;
+---
+>         A) echo "${pre}build/baseline_sniffer $ifc" ;;
+>         B) echo "${pre}build/loader -d $ifc build/phase3_kern.o" ;;
+>         C) echo "${pre}build/loader $ifc build/phase3_kern.o" ;;
+63c62
+<         E) echo "build/loader -d -p accept_all $VA build/phase6_filters.o" ;;
+---
+>         E) echo "${pre}build/loader -d -p accept_all $ifc build/phase6_filters.o" ;;
+83a83,86
+> rps_set() { # rps_set <hex mask>: rps_cpus of p1veth1 rx-0 inside p2ns; prints the read-back
+>     ip netns exec "$NS" bash -c "echo $1 > /sys/class/net/$VB/queues/rx-0/rps_cpus && cat /sys/class/net/$VB/queues/rx-0/rps_cpus"
+> }
+> 
+94a98
+>     [[ "$traffic" == idle ]] && TOPO=T0
+100a105
+>     [[ "$traffic" == flood && "$pps" -gt 0 ]] && rate=$(( (pps / 2) * (FLOOD_SIZE - 42) * 8 ))   # Phase 10 ladder: PPS/2 per stream
+102a108
+>     local rps_rb; rps_rb="$(rps_set "$([[ "$TOPO" == T1 ]] && echo 2 || echo 0)" 2>&1)"
+118c124,125
+<         echo "# pinning cap=$CPU_CAP srv=$CPU_SRV cli_match=$CPU_MATCH_CLI cli_noise=$CPU_NOISE_CLI"
+---
+>         echo "# pinning cap=$CPU_CAP srv=$CPU_SRV cli_match=$CPU_MATCH_CLI cli_noise=$CPU_NOISE_CLI rps=$CPU_RPS sys=$CPU_SYS"
+>         echo "# topology=$TOPO rps_cpus_readback=$rps_rb"
+161c168
+<         [[ "$traffic" == flood ]] && { payload=$((FLOOD_SIZE - 42)); bw=0; }
+---
+>         [[ "$traffic" == flood ]] && { payload=$((FLOOD_SIZE - 42)); bw=0; [[ "$pps" -gt 0 ]] && bw="$rate"; }
+202a210
+>     rps_set 0 >> "${OUT%.log}.rps_reset" 2>&1

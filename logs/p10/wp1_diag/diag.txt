@@ -1,0 +1,99 @@
+attempts: 813; clean and rc 0: 181; failing: 632; rc!=0: 0
+canary limit (CPU-s/s over 4 cores): [0.101804]
+window wall (s) of the canary snapshots: min 0.050 median 0.096 max 2.728
+tool duration (s): min 0.0083 median 0.0330 max 2.690
+
+## failure rate by canary-window wall time (s)
+bin	n	fail	fail_frac	median_rate	median_ticks	limit_in_ticks(median)
+[0,0.25)	481	439	0.913	0.2077	2.0	0.59
+[0.25,0.5)	13	7	0.538	0.1055	4.0	3.79
+[0.5,1)	309	180	0.583	0.1185	7.0	6.01
+[1,2)	5	3	0.600	0.1230	16.0	13.24
+[2,4)	5	3	0.600	0.1063	29.0	27.63
+
+## by kind
+kind	n	fail	fail_frac	median_wall	median_rate
+dr_B	103	65	0.631	0.597	0.1185
+dr_E	90	48	0.533	0.593	0.1149
+dr_U	99	60	0.606	0.581	0.1210
+memcpy	94	53	0.564	0.202	0.1253
+tr_accept	139	128	0.921	0.057	0.1807
+tr_port	146	143	0.979	0.095	0.2109
+tr_reject	142	135	0.951	0.057	0.1806
+
+## tick quantisation: busy ticks (rate x wall x 100) of every attempt; integer if the rate is a multiple of 0.01/wall
+max |ticks - round(ticks)| over all attempts: 0.1601  (the rate printed has 6 decimals)
+ticks	failing	passing
+0	0	27
+1	188	13
+2	105	22
+3	46	30
+4	24	21
+5	15	39
+6	23	24
+7	49	1
+8	45	1
+9	36	0
+10	28	0
+11	11	1
+12	7	0
+13	10	0
+14	6	2
+15	4	0
+16	9	0
+17	6	0
+18	2	0
+19	3	0
+20	2	0
+21	1	0
+23	1	0
+25	1	0
+27	2	0
+28	1	0
+29	1	0
+34	1	0
+(counts above 40 ticks: failing 5, passing 0)
+
+## ticks = a + b x wall  (a = ticks per attempt independent of duration, b = ticks per second): OLS over all attempts, and over attempts with wall >= 1 s
+all: n=813 a=1.77+-0.45 ticks, b=11.81+-1.02 ticks/s (= 0.1181 CPU-s/s)
+wall>=1s: n=10 a=95.03+-59.61 ticks, b=-27.05+-28.16 ticks/s (= -0.2705 CPU-s/s)
+wall<1s: n=803 a=1.93+-0.31 ticks, b=10.53+-0.82 ticks/s (= 0.1053 CPU-s/s)
+
+## pre-flight idle windows of block B1 (10 s each, same 4 cores)
+{
+ "block": "WP1",
+ "cores": [
+  0,
+  1,
+  3,
+  4
+ ],
+ "idle_rates": [
+  0.070834,
+  0.084837,
+  0.077844
+ ],
+ "canary_max": 0.084837,
+ "limit": 0.10180439999999999,
+ "idle_limit": 0.1652,
+ "passed": true
+}
+
+## failure rate over the sequence (by plan seq decile): is contamination episodic (background) or uniform?
+decile 1: attempts 86 fail 0.802 median_rate 0.166
+decile 2: attempts 84 fail 0.774 median_rate 0.165
+decile 3: attempts 84 fail 0.798 median_rate 0.175
+decile 4: attempts 87 fail 0.851 median_rate 0.179
+decile 5: attempts 90 fail 0.811 median_rate 0.178
+decile 6: attempts 85 fail 0.812 median_rate 0.177
+decile 7: attempts 101 fail 0.911 median_rate 0.192
+decile 8: attempts 71 fail 0.676 median_rate 0.168
+decile 9: attempts 63 fail 0.587 median_rate 0.116
+decile 10: attempts 62 fail 0.613 median_rate 0.130
+
+## within long windows only (wall >= 1 s): rate distribution
+n=10 min 0.0461 median 0.1146 max 2.0532; fail frac 0.600
+
+## single-tick exceedance: one /proc/stat tick is 0.01 CPU-s, so a window shorter than 0.01/limit seconds fails with ONE tick
+0.01/limit = 0.0982 s; attempts with canary wall below it: 441; failing among them: 417; passing with 0 ticks: 24
+failing attempts exceeding the limit by less than 1 tick: 222 of 632; by less than 2 ticks: 356; by 5 ticks or more: 121

@@ -61,3 +61,24 @@ Re-probed with real commands; the older rows above were not reused. Values as pr
 | sudo | `sudo -n true` | `sudo-rs: interactive authentication is required` (password needed; apt run in the user's Terminal tab, `logs/p8/p8_apt_install.log`) |
 
 Notes: the Phase 6c environment (D6c.1) was an x86_64 container with gcc 13.3.0, valgrind 3.22.0, libpcap 1.10.4, tcpdump 4.99.4; the compiler, valgrind and libpcap versions all differ from this VM.
+
+## Phase 10 session (2026-11-08, aarch64 VM; raw: logs/p10/probe/ (second attempt), logs/p10/probe_attempt1/, logs/p10/p10_probe_console.log)
+Probes of WP0 (`scripts/p10_probe.sh`). The first attempt had three defects of my script (a string comparison of the RPS read-back "02" with "2", the wrong path /proc/softnet_stat, pktgen checked without loading the module); it is kept in `logs/p10/probe_attempt1/`. Values as printed by the second attempt:
+
+| key | command / evidence | observed value |
+|---|---|---|
+| kernel | `uname -srm` | `Linux 6.17.0-41-generic aarch64` (Phases 6 to 8.4 ran on `6.17.0-19-generic`; the kernel changed in between, nothing from earlier phases is reused as a baseline in Phase 10) |
+| gcc / clang | `gcc --version`, `clang --version` | `gcc (Ubuntu 15.2.0-4ubuntu4) 15.2.0` / `Ubuntu clang version 20.1.8 (0ubuntu4)` |
+| libpcap / tcpdump | `pkg-config --modversion libpcap`, `tcpdump --version` | `1.10.5` / `tcpdump version 4.99.5` |
+| CPUs online | `cat /sys/devices/system/cpu/online` | `0-4` |
+| RPS writable | `echo 2 > .../p1veth1/queues/rx-0/rps_cpus` in `p2ns`, read back | **yes** (read back `02`) |
+| RPS steers receive work | `/proc/net/softnet_stat` per-CPU processed packets during a 3 s iperf3 UDP flood (clients core 4, server core 3) | **yes**: mask 0 -> `[12, 0, 0, 14, 1319189]`, mask 2 -> `[3, 2762154, 0, 12, 0]` (core 1 share 0.000 and 1.000); iperf3 client packets sent: 1319174 and 2762136 (probe numbers, no capture attached, not a result) |
+| pktgen | `modprobe pktgen`, `/proc/net/pktgen/pgctrl`, `rmmod pktgen` | **yes** (module loadable; loaded for the probe and unloaded again); not used in the design |
+| trafgen, mausezahn | `command -v` | **no**, **no** |
+| own pacer | `sendmmsg` in `sys/socket.h`, `struct mmsghdr` in `/usr/include/aarch64-linux-gnu/sys/socket.h` (`logs/p10/p10_api_check.hits`) | **yes** (not needed: the ladder paces with iperf3) |
+| default interface | `ip route get 1.1.1.1`, `tcpdump -D` | `enp0s8` (10.0.2.15 via 10.0.2.2) |
+| socket buffers | `sysctl net.core.rmem_max` | `212992` (a large AF_PACKET queue needs `SO_RCVBUFFORCE`, root) |
+| memory at probe | `free -m` | swap in use 19 MB, MemAvailable 2662 MB |
+| bpf | `sysctl net.core.bpf_jit_enable kernel.unprivileged_bpf_disabled` | `1`, `2` |
+
+Header symbols used by the Phase 10 tools (file:line) are in CODE_NOTES.md, section "Phase 10". `setns` is declared in `/usr/include/aarch64-linux-gnu/bits/sched.h:145` (the first grep looked in `sched.h` only).
