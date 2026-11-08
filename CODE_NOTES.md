@@ -224,3 +224,6 @@ ETH_P_ALL | /usr/include/linux/if_ether.h:132 | #define ETH_P_ALL	0x0003		/* Eve
 ## Phase 10 WP1b additions (2026-11-08)
 - `CLOCK_THREAD_CPUTIME_ID`, `clock_gettime`: see hits below (glibc/kernel headers, not libbpf). The libbpf and kernel symbols of `p10b_testrun.c` and `p10b_drain.c` are the same as those of `p10_testrun.c` and `p10_drain.c`, already recorded in the Phase 10 section above.
 - `CLOCK_THREAD_CPUTIME_ID`: /usr/include/linux/time.h:50 (`#define CLOCK_THREAD_CPUTIME_ID 3`). `clock_gettime`: /usr/include/time.h:288.
+
+## Demo kit (scripts/demo/, 2026-11-09)
+- No libbpf function, BPF helper or kernel symbol is used that is not already recorded above: act 1 runs the existing `build/loader` (libbpf calls recorded in the Phase 4 section) on objects built in Phases 3, 5 and 10; act 2 runs `iperf3`, `build/baseline_sniffer` and `scripts/lab_up.sh`; act 3 runs `scripts/demo_c1.sh` unchanged. The only new system interfaces are shell commands (`timeout`, `taskset`, `ip netns`, `/sys/class/net/<if>/statistics/tx_packets`, `/proc/<pid>/stat`), not C symbols.

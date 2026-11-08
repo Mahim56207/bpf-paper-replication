@@ -61,6 +61,9 @@ def build(rd, rj, mdtable, commit):
     rng = {f: (min(c["R"][f][0] for c in grid.values()), max(c["R"][f][2] for c in grid.values())) for f in ("F1", "F2", "F3", "F4")}
     a2, rs = p10["wp2a"], p10["wp2b"]["rates"]
     mit = p10["labels"]["C4-mitigation"]["detail"]
+    # Phase 12 relabel (D12.1): the mechanical output of rule P6 is kept in results/p10_summary.json, but the report names the result by what the data show
+    MIT = "REVERSED gap, cause not established (UNVERIFIED)" if all(mit.get(x) == "REVERSED" for x in "AB") else None
+    assert MIT is not None, "the mitigation classes are no longer both REVERSED: the report text has to be rewritten"
     ratios = a2["ratios"]
     n_bc = sum(1 for r in rs if rs[r]["rho_class"] == "B-CHEAPER")
     undec_rho = [r for r in sorted(rs, key=int) if rs[r]["rho_class"] != "B-CHEAPER"]
@@ -97,8 +100,8 @@ def build(rd, rj, mdtable, commit):
          ["C4 end-to-end speed-up over NIT and CSPF (as tested here: capture-side CPU per matched packet, A against B, paced)", f"**{L['C4']}**",
           f"rule P9 of `docs/phase10_design.md`: at the paced rates where the label is decided, config A (user-space copy-then-filter) costs more capture-side CPU per flow-matched packet than config B (eBPF filter), ratio and class per rate in the ladder table below (B-CHEAPER at {n_bc} of {len(rs)} rates); the drop fraction is bounded below the declared margin at every rate except {', '.join(undec_drop) or 'none'}. **Not the 1993 end-to-end speed-up and not the CSPF ratio** (instruction counts are C1)",
           "INCONCLUSIVE under the frozen V8 rule (Phase 8.3); NOT SUPPORTED with the post hoc floor; NOT SUPPORTED in Phase 6"],
-         ["C4-mitigation: the sender-side confound of Phase 8.2 is removed when the capture runs on the receiving end with RPS", f"**{L['C4-mitigation']}**",
-          f"the offered-load gap of Phase 8.2 is reversed in the mitigated topology: ratio no-capture over capture in the baseline topology A {iv(ratios['A']['R_base'][0], ratios['A']['R_base'][2], 3)}, B {iv(ratios['B']['R_base'][0], ratios['B']['R_base'][2], 3)}; in the mitigated topology A {iv(ratios['A']['R_mit'][0], ratios['A']['R_mit'][2], 3)}, B {iv(ratios['B']['R_mit'][0], ratios['B']['R_mit'][2], 3)}, below one, so capture attached gave more offered load than no capture. Causes UNVERIFIED",
+         ["C4-mitigation: the sender-side confound of Phase 8.2 when the capture runs on the receiving end with RPS", f"**{MIT}**",
+          f"ratio of the offered load without capture over that with capture, baseline topology to mitigated topology: A {g(ratios['A']['R_base'][1], 3)} to {g(ratios['A']['R_mit'][1], 3)}, B {g(ratios['B']['R_base'][1], 3)} to {g(ratios['B']['R_mit'][1], 3)}, C {g(ratios['C']['R_base'][1], 3)} to {g(ratios['C']['R_mit'][1], 3)} (intervals in the section below; C is reported only); below one in the mitigated topology, so with capture attached the sender offered MORE load than without. Cause not established (UNVERIFIED). The mechanical output of rule P6 is in `results/p10_summary.json` and is not used as the result here",
           "C4-S SENDER-LIMITED SUPPORTED (Phase 8.2)"],
          ["C5 a safe in-kernel VM makes code to the data practical", f"**{L['C5']}**",
           f"the unbounded loop is rejected by the verifier (exit {p10['wp4']['unbounded']['exit']}: \"{infinite}\") and the loop with a constant bound is accepted (exit {p10['wp4']['bounded']['exit']}). The CPU-benefit part of C5 is C2 and C3 above (microbenchmarks only)",
@@ -188,7 +191,7 @@ R is the mean offered load of the no-capture configuration over that of the capt
 
 {mit_tbl}
 
-**The gap is reversed, not removed.** A ratio below one in the mitigated topology means that the configuration with capture attached offered MORE load than the configuration without capture. In T1 the no-capture configuration N has the lowest offered load of the four ({', '.join(c for c in above_n)} are above it). The rule of the design (P6) was written for a gap that shrinks toward parity and counts a reversal as closing the gap; the label {L['C4-mitigation']} therefore says that the gap of Phase 8.2 (the capture configurations offering less load than no capture) does not appear in T1, not that capture is free. **The causes of the reversal are UNVERIFIED**; no run isolated them. (The first version of the summary used a different name for this class; it was renamed at the author's request after the run, thresholds unchanged, D10.11.)
+**The gap is reversed, not removed.** A ratio below one in the mitigated topology means that the configuration with capture attached offered MORE load than the configuration without capture. In T1 the no-capture configuration N has the lowest offered load of the four ({', '.join(c for c in above_n)} are above it). The rule of the design (P6) was written for a gap that shrinks toward parity, and its mechanical output (recorded in `results/p10_summary.json`) counts a reversal as closing the gap; this report does not use that output as the result. The result is a **{MIT}**: the gap of Phase 8.2 (the capture configurations offering less load than no capture) does not appear in T1, and that is not the same as the confound having been removed or capture being free. **The causes of the reversal are UNVERIFIED**; no run isolated them. (The first version of the summary used a different name for this class; it was renamed at the author's request after the run, thresholds unchanged, D10.11.)
 
 **C4 paced ladder (WP2b).** Topology T1, configs A, B and C, six runs per cell at five total rates; capture-side CPU is the busy time of the two receiver cores minus the idle busy time, per flow-matched packet (ns); rho = cost(A) / cost(B) with a 95% interval; drops are socket drops over packets received by the socket:
 
@@ -242,13 +245,13 @@ An independent set of CSPF programs, written by a fresh subagent that was given 
                  "Phase 10 was committed once after \"Phase 10 complete\" with its verify script and a secrets scan re-run (`logs/p10/p10_verify.log`, `logs/p10/p10_secrets_scan.log`); build artifacts and the raw capture are not in git.")
     abstract = (f"Phase 10 re-measured all five claims under designs that were frozen before the runs, on one machine (kernel {kernel_p10}): C1 {L['C1']} (the direction holds in {n_dir} of {len(grid)} builds, the ordering of the ratios in only {n_ord}), "
                 f"C2 {L['C2']} and C3 {L['C3']} (microbenchmarks, every slope inside the frozen margin of 10 ns/byte, not end-to-end capture), C4 {L['C4']} (capture-side CPU per matched packet of the user-space sniffer against the eBPF filter at paced rates), "
-                f"the mitigation of the sender confound {L['C4-mitigation']} with the gap reversed rather than removed (causes UNVERIFIED), and C5 {L['C5']} (the verifier rejects an unbounded loop and accepts a bounded one). "
+                f"the mitigation test of the sender confound gave a {MIT}: with capture attached the sender offered more load than without, not just a smaller gap, and C5 {L['C5']} (the verifier rejects an unbounded loop and accepts a bounded one). "
                 f"The earlier labels of Phases 6 to 9 are kept in the table that follows the final labels; the first microbenchmark run was INCONCLUSIVE because its batches were too short for the canary and is kept as superseded.")
     comparison_c1 = (f" **Phase 10:** with {len(grid)} builds (two compilers, three optimisation levels), an independent CSPF set and a real trace the label is {L['C1']}: the direction holds in {n_dir} of {len(grid)} builds and the ordering of the ratios in {n_ord}; "
                      f"R for Filter 4 ranges over {iv(*rng['F4'], 3)}.")
     comparison_c234 = (f" **Phase 10 update (final labels):** C2 {L['C2']} and C3 {L['C3']} from microbenchmarks of the in-kernel filter and of the user-space drain path (not end-to-end capture; every slope inside the frozen margin of 10 ns/byte; "
                        f"user-path slope {g(kU['estimate'])} ns/byte, 90% interval {iv(kU['lo'], kU['hi'])}, against the 1993 slope of 148 ns/byte: the 1993 slope is {g(kU['bpf_over_hi'], 3)} times the upper bound, a comparison of different measurement paths); "
-                       f"C4 {L['C4']} (receiver-side capture CPU per matched packet at paced rates); the sender-side confound is reversed in the mitigated topology ({L['C4-mitigation']}, causes UNVERIFIED).")
+                       f"C4 {L['C4']} (receiver-side capture CPU per matched packet at paced rates); in the mitigated topology the sender-side gap of Phase 8.2 is a {MIT}.")
     comparison_c5 = f" **Phase 10 update:** C5 {L['C5']}: the verifier rejects an unbounded loop (\"{infinite}\") and accepts a loop with a constant bound."
     return {"final": final_block, "section": section, "threats": threats, "unverified": unverified, "amend_rows": amend_rows, "selfaudit": selfaudit, "abstract": abstract,
             "comparison_c1": comparison_c1, "comparison_c234": comparison_c234, "comparison_c5": comparison_c5, "labels": L, "kernel": kernel_p10}

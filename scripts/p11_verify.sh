@@ -36,8 +36,11 @@ want = {"C1 register": "C1", "C2 reject": "C2", "C3 accept": "C3", "C4 end-to-en
 ok = True
 for prefix, key in want.items():
     got = [v for k, v in rows.items() if k.startswith(prefix)]
-    good = len(got) == 1 and got[0] == S[key]["label"]
-    print(("PASS: " if good else "FAIL: ") + "final table row %s has label %s (summary: %s)" % (prefix, got, S[key]["label"]))
+    exp = S[key]["label"]
+    if key == "C4-mitigation":       # Phase 12 relabel (D12.1): named by what the data show when both classes are REVERSED
+        exp = "REVERSED gap, cause not established (UNVERIFIED)" if all(v == "REVERSED" for v in S[key]["detail"].values()) else exp
+    good = len(got) == 1 and got[0] == exp
+    print(("PASS: " if good else "FAIL: ") + "final table row %s has label %s (expected %s; rule output in the summary: %s)" % (prefix, got, exp, S[key]["label"]))
     ok = ok and good
 sys.exit(0 if ok else 1)
 PY
@@ -56,6 +59,8 @@ need "delta = 10 ns/byte was kept as frozen and no tighter margin was added" "de
 need "The gap is reversed, not removed." "the mitigation result is a reversed gap"
 need "The causes of the reversal are UNVERIFIED" "causes of the reversal UNVERIFIED"
 need "C2 (WP1 original, superseded)" "superseded WP1 result kept alongside"
+bad=$(grep -nE "(mitigation|C4-mitigation)[^|]*\| \*\*SUPPORTED|mitigation[^.]*(label|labelled|is) \*{0,2}SUPPORTED" REPORT.md README.md results/comparison.md || true)
+[[ -z "$bad" ]]; chk $? "no line calls the mitigation result SUPPORTED (${bad:-none})"
 echo "### 6. presentation.html"
 python3 - <<'PY'
 import hashlib, subprocess, sys
@@ -74,7 +79,7 @@ echo "### 7. paper repository untouched"
 now="$(git -C ~/bpf-paper-short rev-parse HEAD; git -C ~/bpf-paper-short status --porcelain | wc -l)"
 [[ "$now" == "$(cat $D/paper_repo_head.txt)" ]]; chk $? "~/bpf-paper-short has the same HEAD and a clean working tree as when it was read ($(echo $now | tr '\n' ' '))"
 echo "### 8. scope of the change"
-allowed='^(REPORT\.md|README\.md|results/comparison\.md|presentation\.html|DEVIATIONS\.md)$|^scripts/(build_report\.py|build_report_p10\.py|p11_)|^logs/p8/p8_7/report_sources\.txt$|^logs/p11/|^docs/p11_paper_change_list\.md$|^logs/p10/p10_push\.log$|^results/p10_baseline_offered_load_note\.md$|^logs/p10/p10_baseline_offered_load_analysis\.log$|^scripts/p10_baseline_note_probe\.py$'
+allowed='^(REPORT\.md|README\.md|results/comparison\.md|presentation\.html|DEVIATIONS\.md)$|^scripts/(build_report\.py|build_report_p10\.py|p11_)|^logs/p8/p8_7/report_sources\.txt$|^logs/p11/|^docs/p11_paper_change_list\.md$|^logs/p10/p10_push\.log$|^logs/p12/|^logs/p11_ls_remote\.log$|^results/p10_baseline_offered_load_note\.md$|^logs/p10/p10_baseline_offered_load_analysis\.log$|^scripts/p10_baseline_note_probe\.py$'
 deferred='^scripts/demo/|^logs/demo_rehearsal_[0-9]\.log$|^logs/demo_act3_preview\.log$|^CODE_NOTES\.md$'   # Phase 12 (demo kit) files and the Phase 12 CODE_NOTES entry: deliberately not part of Phase 11
 chg=$(git status --short | cut -c4- | grep -vE "$allowed" | grep -vE "$deferred" || true)
 [[ -z "$chg" ]]; chk $? "only the Phase 11 files changed (Phase 12 demo-kit files and its CODE_NOTES entry are deferred): ${chg:-none}"

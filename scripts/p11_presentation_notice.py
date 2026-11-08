@@ -18,6 +18,8 @@ dir_fail = ", ".join(b for b, c in grid.items() if c["direction"] != "HOLDS") or
 f4_ind = indep["mix_M0"]["indep"]["R"]["F4"][1]
 f4_real = [c["opt"]["R"]["F4"][1] for c in real.values()]
 git = lambda *a: subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True).stdout
+MIT = "REVERSED gap, cause not established (UNVERIFIED)"       # D12.1: named by what the data show, not by the mechanical output of rule P6
+assert all(v == "REVERSED" for v in S["labels"]["C4-mitigation"]["detail"].values()), "the mitigation classes are no longer both REVERSED: rewrite this item"
 n_logs = len([l for l in git("ls-files", "logs").splitlines() if l])
 n_scripts = len([l for l in git("ls-files", "scripts").splitlines() if l])
 kU = {r["quantity"]: r for r in wb["interval_table"]}["s_U, user-space drain path U"]
@@ -45,7 +47,7 @@ items = [
     ("\"Visual Separation Restored\": Config B cleanly separated below Config A across all packet sizes",
      "Not tested by any pre-declared rule; the net-over-floor columns of the reject curve in results/summary.md have standard errors as large as the values (some negative)."),
     ("C4 slides: \"Verdict: NOT SUPPORTED as a Receiver-Drop Claim\", \"The 1993 Bottleneck Inversion\"",
-     f"NOT SUPPORTED was a post hoc sensitivity analysis that used an uncalibrated flood V8 floor (D8.22); under the frozen rule C4 was INCONCLUSIVE. Superseded by Phase 10: C4 {L['C4']} (capture-side CPU per matched packet of the user-space sniffer against the eBPF filter at paced rates, not the 1993 end-to-end speed-up), and with the capture on the receiving end the sender-side gap is reversed ({L['C4-mitigation']}; causes UNVERIFIED)."),
+     f"NOT SUPPORTED was a post hoc sensitivity analysis that used an uncalibrated flood V8 floor (D8.22); under the frozen rule C4 was INCONCLUSIVE. Superseded by Phase 10: C4 {L['C4']} (capture-side CPU per matched packet of the user-space sniffer against the eBPF filter at paced rates, not the 1993 end-to-end speed-up), and with the capture on the receiving end the sender-side gap of Phase 8.2 is a {MIT} in the mitigated topology."),
     ("Phase 8.2 slide: \"the throughput degradation matched the predicted cycle loss within 22.5%\"",
      "S-H2 held only inside the pre-declared tolerance, with the observed ratios above the prediction; the samples are timer-based (no hardware PMU) and the share was measured under profiling (REPORT.md, UNVERIFIED items 10 and 17)."),
     ("\"The 20x Noise Reduction\": shutting down the desktop window reduced ambient noise by 19.2x",

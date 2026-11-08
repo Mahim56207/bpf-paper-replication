@@ -1,0 +1,89 @@
+demo start 2026-11-09T01:11:41+05:30 on Linux 6.17.0-41-generic aarch64; repo fcc860b, branch phase10-complete
+
+==================== ACT 1 of 3: the kernel verifier decides what may run in the kernel ====================
+
+--- 1/3 baseline filter (port-4040 match, bounds-checked loads)
+    source: src/phase3_kern.c
+$ build/loader -p phase3_filter lo build/phase3_kern.o
+    loader: START iface=lo ifindex=1 object=build/phase3_kern.o prog=phase3_filter prog_fd=5 map_fd=4 drain=0
+==> ACCEPTED by the kernel verifier
+
+--- 2/3 variant A2: map lookup result used without the NULL check, dynamic key
+    source: src/phase5_unsafe_a2.c (Phase 5)
+$ build/loader -p phase3_filter lo build/phase5_unsafe_a2.o
+    stderr: libbpf: prog 'phase3_filter': BPF program load failed: -EACCES
+    stderr: R0 invalid mem access 'map_value_or_null'
+    stderr: processed 70 insns (limit 1000000) max_states_per_insn 0 total_states 7 peak_states 7 mark_read 3
+    stderr: libbpf: prog 'phase3_filter': failed to load: -EACCES
+    stderr: bpf_object__load: Permission denied
+    (the whole captured stderr is 97 lines: build/demo/act1_phase5_unsafe_a2.stderr)
+==> REJECTED by the kernel verifier
+
+--- 3/3 unbounded loop: while (1) with no exit the verifier can bound
+    source: src/p10_loop_unbounded.c (Phase 10)
+$ build/loader -p p10_unbounded lo build/p10/p10_loop_unbounded.o
+    stderr: libbpf: prog 'p10_unbounded': BPF program load failed: -EINVAL
+    stderr: infinite loop detected at insn 2
+    stderr: processed 15 insns (limit 1000000) max_states_per_insn 0 total_states 1 peak_states 1 mark_read 1
+    stderr: libbpf: prog 'p10_unbounded': failed to load: -EINVAL
+    stderr: bpf_object__load: Invalid argument
+    (the whole captured stderr is 34 lines: build/demo/act1_p10_loop_unbounded.stderr)
+==> REJECTED by the kernel verifier
+
+act 1 done: 3 of 3 outcomes as expected
+[act 1: 29 s, exit status 0]
+
+==================== ACT 2 of 3: the sender, not the receiver, can be the limit (live, 10 s per configuration) ====================
+act 2: sender limit, live (pinning: servers core 3, sniffer core 2, match client core 4, noise client core 1)
+
+--- config N: no capture process (control)
+  t= 1s  offered   1199226 pps   (no capture process)
+  t= 2s  offered   1208269 pps   (no capture process)
+  t= 3s  offered   1205987 pps   (no capture process)
+  t= 4s  offered   1201232 pps   (no capture process)
+  t= 5s  offered   1210117 pps   (no capture process)
+  t= 6s  offered   1203904 pps   (no capture process)
+  t= 7s  offered   1207074 pps   (no capture process)
+  t= 8s  offered   1203239 pps   (no capture process)
+  t= 9s  offered   1195658 pps   (no capture process)
+  t=10s  offered   1150915 pps   (no capture process)
+    config N: mean offered load over the window 1198229 pps
+
+--- config A: user-space sniffer on p1veth0 (copy every packet, then filter), core 2
+  t= 1s  offered    819933 pps   sniffer CPU  58.5 % of one core
+  t= 2s  offered    792534 pps   sniffer CPU  58.5 % of one core
+  t= 3s  offered    782571 pps   sniffer CPU  58.6 % of one core
+  t= 4s  offered    799386 pps   sniffer CPU  59.7 % of one core
+  t= 5s  offered    815411 pps   sniffer CPU  57.7 % of one core
+  t= 6s  offered    813359 pps   sniffer CPU  59.6 % of one core
+  t= 7s  offered    799442 pps   sniffer CPU  58.6 % of one core
+  t= 8s  offered    808936 pps   sniffer CPU  59.7 % of one core
+  t= 9s  offered    814557 pps   sniffer CPU  58.6 % of one core
+  t=10s  offered    754307 pps   sniffer CPU  55.6 % of one core
+    config A: mean offered load over the window 799769 pps
+    config A: sniffer CPU over the window 58.5 % of one core
+    sniffer: FINAL t=11.079s total_packets=7930926 matched_packets=3974408 total_bytes=2030307068 truncated=0
+    sniffer: FINAL_KERNEL kernel_packets=8054130 kernel_drops=123204
+
+live: offered load without capture 1198229 pps, with the user-space sniffer 799769 pps, ratio 1.50
+Illustrative live run, 10 s, not the logged result; the logged result is in results/p10_summary.md
+
+act2: teardown (iperf3, sniffer, namespace p2ns, veth p1veth0)
+act2: teardown verified: no p1veth0, no p2ns
+[act 2: 34 s, exit status 0]
+
+==================== ACT 3 of 3: register machine against stack machine: instructions per packet ====================
+scripts/demo_c1.sh sha256 6b2a81ed4d890a6fc9caeff88b34b4368376a147053808a49f98c6e6e6a68024
+hash logged earlier (scripts/p9_verify.sh, check 7): 6b2a81ed4d890a6fc9caeff88b34b4368376a147053808a49f98c6e6e6a68024
+hash matches; running it unchanged as mahim
+Filter 4 (IP, ARP or RARP between two hosts): host 10.0.0.10 and host 10.0.0.20
+  libpcap (oracle): expr="host 10.0.0.10 and host 10.0.0.20" frames=10000 accepts=101 opt_len=20 raw_len=50 opt_vs_raw_disagree=0
+  register machine program: 20 static instructions (libpcap, optimized)
+  stack machine program:    107 static instructions (short-circuit, fused indirection)
+  register machine mean instructions executed per packet:   6.07   decision mismatches vs libpcap: 0 of 10000
+  stack machine    mean instructions executed per packet: 106.34   decision mismatches vs libpcap: 0 of 10000
+  ratio stack / register = 17.5x   (1993 paper, Fig. 8 labels for Filter 4: 2330 / 129 = 18.1x, host instructions)
+[act 3: 2 s, exit status 0]
+
+demo finished 2026-11-09T01:12:55+05:30; total 74 s; acts with a non-zero exit status: 0
+REHEARSAL 2: wall time 74 s, run_demo exit status 0
